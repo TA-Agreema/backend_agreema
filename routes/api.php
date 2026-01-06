@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\Auth\AuthController;
 use App\Http\Controllers\API\Admin\UserController;
 use App\Http\Controllers\API\Admin\UserRoleController;
+use App\Http\Controllers\API\Admin\PermissionController;
 
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -25,6 +26,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/show-roles/{id}', [UserRoleController::class, 'show'])->middleware(('permission:read.role'));
         Route::patch('/update-roles/{id}', [UserRoleController::class, 'update'])->middleware(('permission:update.role'));
         Route::delete('/delete-roles/{id}', [UserRoleController::class, 'destroy'])->middleware(('permission:delete.role'));
+
+        Route::get('/permissions', [PermissionController::class, 'index'])->middleware(('permission:read.permission'));
     });
 });
 
