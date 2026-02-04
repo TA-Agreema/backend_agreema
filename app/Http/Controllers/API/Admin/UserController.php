@@ -6,10 +6,12 @@ use Exception;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\User\UserResource;
 use App\Http\Requests\User\StoreUserRequest;
 use App\Http\Requests\User\UpdateUserRequest;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Container\Attributes\Auth;
 
 class UserController extends Controller
@@ -20,6 +22,8 @@ class UserController extends Controller
             $users = User::with('roles')->get();
             return UserResource::collection($users);
         } catch (Exception $e) {
+            Log::error('Error retrieving users: ' . $e->getMessage());
+
             return response()->json([
                 'message' => 'An error occurred while retrieving users',
                 'error' => $e->getMessage(),
@@ -30,6 +34,19 @@ class UserController extends Controller
     public function store(StoreUserRequest $request)
     {
         try {
+            if (User::where('email', $request->email)->exists()) {
+                Log::error ('Attempt to create user with existing email', [
+                    'email' => $request->email,
+                ]);
+
+                return response()->json([
+                    'message' => 'Email already in use',
+                    'errors' => [
+                        'email' => ['The email has already been taken.'],
+                    ],
+                ], 422);
+            } 
+
             DB::transaction(function () use ($request, &$user) {
                 $user = User::create([
                     'name' => $request->name,
@@ -47,6 +64,11 @@ class UserController extends Controller
 
             return new UserResource($user);
         } catch (Exception $e) {
+            Log::error('Error creating User', [
+                'error' => $e->getMessage(),
+                'input' => $request->except('password'),
+            ]);
+
             return response()->json([
                 'message' => 'An error occurred while creating the user',
                 'error' => $e->getMessage(),
@@ -60,6 +82,11 @@ class UserController extends Controller
             $user = User::with('roles')->findOrFail($id);
             return new UserResource($user);
         } catch (Exception $e) {
+            Log::error('Error retrieving User', [
+                'user_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
             return response()->json([
                 'message' => 'User not found',
                 'error' => $e->getMessage(),
@@ -69,9 +96,23 @@ class UserController extends Controller
 
     public function update(UpdateUserRequest $request, $id)
     {
-        try {
+        try {        
             DB::transaction(function () use ($request, $id, &$user) {
                 $user = User::findOrFail($id);
+
+                if ($request->has('email') && $request->email !== $user->email) {
+                    if (User::where('email', $request->email)->exists()) {
+                        Log::error ('Attempt to update user with existing email', [
+                            'user_id' => $id,
+                            'email' => $request->email,
+                        ]);
+                    }
+                    
+                    throw ValidationException::withMessages([
+                         'email' => ['The email has already been taken.'],
+                    ]);
+                }
+
                 $user->update($request->only([
                     'name',
                     'job_title',
@@ -82,10 +123,16 @@ class UserController extends Controller
 
             return new UserResource($user);
         } catch (Exception $e) {
-            return response()->json([
-                'message' => 'An error occurred while updating the user',
+            Log::error('Error updating User', [
+                'user_id' => $id,
                 'error' => $e->getMessage(),
-            ], 500);
+                'input' => $request->except('password'),
+            ]);
+
+            return response()->json([
+                'message' => 'User not found',
+                'error' => $e->getMessage(),
+            ], 404);
         }
     }
 
@@ -99,6 +146,11 @@ class UserController extends Controller
                 'message' => 'User deleted successfully',
             ], 200);
         } catch (Exception $e) {
+            Log::error('Error deleting User', [
+                'user_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
             return response()->json([
                 'message' => 'An error occurred while deleting the user',
                 'error' => $e->getMessage(),
@@ -123,6 +175,12 @@ class UserController extends Controller
 
             return new UserResource($user);
         } catch (Exception $e) {
+            Log::error('Error updating User roles', [
+                'user_id' => $id,
+                'error' => $e->getMessage(),
+                'roles' => $request->roles,
+            ]);
+
             return response()->json([
                 'message' => 'An error occurred while updating user roles',
                 'error' => $e->getMessage(),

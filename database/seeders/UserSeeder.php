@@ -13,16 +13,55 @@ class UserSeeder extends Seeder
      */
     public function run(): void
     {
-        $admin = User::firstOrCreate([
-            'email' => 'admin@agreema.com',
-            'name' => 'Admin Agreema',
-            'password' => bcrypt('password123'),
-            'job_title' => 'Administrator',
-            'department' => 'IT',
-            'is_active' => true,
-            'email_verified_at' => now(),
-        ]);
+        $users = [
+            [
+                'email' => 'admin@agreema.com',
+                'name' => 'Admin Agreema',
+                'password' => 'password123',
+                'job_title' => 'Administrator',
+                'department' => 'IT',
+                'role' => 'admin',
+            ],
+            [
+                'email' => 'manager@agreema.com',
+                'name' => 'Manager Agreema',
+                'password' => 'password123',
+                'job_title' => 'Project Manager',
+                'department' => 'Management',
+                'role' => 'manager',
+            ],
+            [
+                'email' => 'hrd@agreema.com',
+                'name' => 'HRD Agreema',
+                'password' => 'password123',
+                'job_title' => 'Software Developer',
+                'department' => 'Engineering',
+                'role' => 'hrd',
+            ],
+            [
+                'email' => 'legal@agreema.com',
+                'name' => 'Legal Agreema',
+                'password' => 'password123',
+                'job_title' => 'Client',
+                'department' => null,
+                'role' => 'legal',
+            ],
+        ];
 
-        $admin->assignRole('admin');
+        foreach ($users as $userData) {
+            $user = User::firstOrCreate(
+                ['email' => $userData['email']],
+                [
+                    'name' => $userData['name'],
+                    'password' => bcrypt($userData['password']),
+                    'job_title' => $userData['job_title'],
+                    'department' => $userData['department'],
+                    'is_active' => true,
+                    'email_verified_at' => now(),
+                ]
+            );
+
+            $user->assignRole($userData['role']);
+        }
     }
 }
