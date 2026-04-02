@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('contract_addendum_signers', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('contract_addendum_id')->constrained()->onDelete('cascade');
-            $table->foreignId('signer_id')->constrained()->onDelete('cascade');
+            $table->unsignedBigInteger('contract_addendum_id');
+            $table->unsignedBigInteger('signer_id');
             $table->enum('signer_type', ['internal', 'external']);
             $table->timestamp('signed_at')->nullable();
             $table->string('signature_path')->nullable();
