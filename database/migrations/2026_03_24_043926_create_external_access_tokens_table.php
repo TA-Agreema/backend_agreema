@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string('token')->unique();
             $table->timestamp('expired_at');
             $table->timestamp('used_at')->nullable();
+            $table->timestamps();
         });
     }
 

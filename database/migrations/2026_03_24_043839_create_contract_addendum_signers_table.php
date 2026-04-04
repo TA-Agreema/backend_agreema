@@ -18,6 +18,7 @@ return new class extends Migration
             $table->enum('signer_type', ['internal', 'external']);
             $table->timestamp('signed_at')->nullable();
             $table->string('signature_path')->nullable();
+            $table->timestamps();
         });
     }
 

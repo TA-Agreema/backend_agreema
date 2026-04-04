@@ -22,6 +22,7 @@ return new class extends Migration
             $table->enum('signature_type', ['digital', 'manual_upload'])->nullable();
             $table->string('signature_path')->nullable();
             $table->timestamp('signed_at')->nullable();
+            $table->timestamps();
         });
     }
 
