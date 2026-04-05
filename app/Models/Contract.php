@@ -1,0 +1,91 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+
+class Contract extends Model
+{
+    protected $fillable = [
+        'contract_number',
+        'title',
+        'start_date',
+        'end_date',
+        'terminated_at',
+        'status',
+        'template_id',
+        'created_by',
+        'parent_contract_id',
+    ];
+
+    protected $casts = [
+        'start_date'    => 'date',
+        'end_date'      => 'date',
+        'terminated_at' => 'datetime',
+    ];
+
+    // ─── Relations ───────────────────────────────────────────
+
+    public function template(): BelongsTo
+    {
+        return $this->belongsTo(Template::class, 'template_id');
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function parentContract(): BelongsTo
+    {
+        return $this->belongsTo(Contract::class, 'parent_contract_id');
+    }
+
+    public function childContracts(): HasMany
+    {
+        return $this->hasMany(Contract::class, 'parent_contract_id');
+    }
+
+    public function versions(): HasMany
+    {
+        return $this->hasMany(ContractVersion::class);
+    }
+
+    public function latestVersion(): HasOne
+    {
+        return $this->hasOne(ContractVersion::class)->latestOfMany('version_number');
+    }
+
+    public function parties(): HasMany
+    {
+        return $this->hasMany(ContractParty::class);
+    }
+
+    public function signers(): HasMany
+    {
+        return $this->hasMany(ContractSigner::class);
+    }
+
+    public function addendums(): HasMany
+    {
+        return $this->hasMany(ContractAddendum::class);
+    }
+
+    public function termination(): HasOne
+    {
+        return $this->hasOne(ContractTermination::class);
+    }
+
+    public function statusLogs(): HasMany
+    {
+        return $this->hasMany(ContractStatusLog::class);
+    }
+
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(Notification::class);
+    }
+}

@@ -3,11 +3,12 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
+use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 
 class User extends Authenticatable
 {
@@ -51,5 +52,30 @@ class User extends Authenticatable
         ];
     }
 
-    
+    // ─── Relations ───────────────────────────────────────────
+
+    public function createdTemplates(): HasMany
+    {
+        return $this->hasMany(Template::class, 'created_by');
+    }
+
+    public function createdContracts(): HasMany
+    {
+        return $this->hasMany(Contract::class, 'created_by');
+    }
+
+    public function contractVersions(): HasMany
+    {
+        return $this->hasMany(ContractVersion::class, 'created_by');
+    }
+
+    public function contractSigners(): HasMany
+    {
+        return $this->hasMany(ContractSigner::class);
+    }
+
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(Notification::class);
+    }
 }
