@@ -21,6 +21,11 @@ class DatabaseSeeder extends Seeder
             RoleSeeder::class,
             UserSeeder::class,
             PermissionSeeder::class,
+            ContractCategorySeeder::class,
+            FieldDefinitionSeeder::class,
+            TemplateSeeder::class,
+            PartySeeder::class,
+            ContractSeeder::class,
         ]);
     }
 }
