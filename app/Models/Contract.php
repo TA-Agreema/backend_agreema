@@ -11,6 +11,7 @@ class Contract extends Model
 {
     protected $fillable = [
         'contract_number',
+        'external_contract_number',
         'title',
         'start_date',
         'end_date',
