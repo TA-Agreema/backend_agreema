@@ -14,15 +14,15 @@ class StoreContractRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'contract_number' => 'required|string|unique:contracts,contract_number',
+            'contract_number'          => 'nullable|string|unique:contracts,contract_number',
             'external_contract_number' => 'nullable|string|unique:contracts,external_contract_number',
-            'title' => 'required|string',
-            'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date',
-            'status' => 'nullable|string',
+            'title'       => 'required|string',
+            'start_date'  => 'nullable|date',
+            'end_date'    => 'nullable|date',
+            'status'      => 'nullable|string',
             'template_id' => 'nullable|exists:templates,id',
             'parent_contract_id' => 'nullable|exists:contracts,id',
-            'content' => 'nullable|string',
+            'content'     => 'nullable|string',
             'field_values' => 'nullable|array',
             'field_values.*.field_definition_id' => 'required|exists:fields_definitions,id',
             'field_values.*.value' => 'nullable|string',

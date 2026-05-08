@@ -9,6 +9,7 @@ use App\Http\Controllers\API\Admin\CategoryController;
 use App\Http\Controllers\API\Admin\TemplateController;
 use App\Http\Controllers\API\Admin\FieldDefinitionController;
 use App\Http\Controllers\API\Hrd\ContractController;
+use App\Http\Controllers\API\Hrd\SignerController;
 
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -41,8 +42,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/{id}/toggle-status', [CategoryController::class, 'toggleStatus'])->middleware('permission:update.contract_category');
     });
 
+    // Signers
+    Route::prefix('signers')->group(function () {
+        Route::get('/internal', [SignerController::class, 'internalSigners'])->middleware('permission:create.contract');
+    });
+
     // Contracts: daftar kontrak 
     Route::prefix('contracts')->group(function () {
+        Route::get('/generate-number', [ContractController::class, 'generateNumber'])->middleware('permission:create.contract');
         Route::get('/', [ContractController::class, 'index'])->middleware('permission:read.contracts');
         Route::post('/', [ContractController::class, 'store'])->middleware('permission:create.contract');
         Route::get('/{id}', [ContractController::class, 'show'])->middleware('permission:read.contracts');
@@ -61,5 +68,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/{id}/toggle-status', [TemplateController::class, 'toggleStatus'])->middleware('permission:update.template');
     });
 
-    Route::get('/field-definitions', [FieldDefinitionController::class, 'index']);
+    // Field Definitions
+    Route::prefix('field-definitions')->group(function () {
+        Route::get('/', [FieldDefinitionController::class, 'index']);
+        Route::post('/', [FieldDefinitionController::class, 'store']);
+        Route::patch('/{id}', [FieldDefinitionController::class, 'update']);
+        Route::delete('/{id}', [FieldDefinitionController::class, 'destroy']);
+    });
 });
