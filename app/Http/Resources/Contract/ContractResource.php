@@ -47,6 +47,16 @@ class ContractResource extends JsonResource
                     ];
                 })
                 ->values(),
+            'field_values' => $this->latestVersion?->fieldValues
+                ->map(function ($fv) {
+                    return [
+                        'id' => $fv->id,
+                        'field_definition_id' => $fv->field_definition_id,
+                        'field_label' => $fv->fieldDefinition?->field_label,
+                        'field_key' => $fv->fieldDefinition?->field_key,
+                        'value' => $fv->value,
+                    ];
+                }) ?? [],
         ];
     }
 

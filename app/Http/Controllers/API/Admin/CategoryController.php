@@ -40,9 +40,10 @@ class CategoryController extends Controller
     {
         try {
             $category = ContractCategory::create([
-                'name' => $request->name,
-                'description' => $request->description,
-                'is_active' => $request->boolean('is_active', true),
+                'name'          => $request->name,
+                'number_prefix' => $request->number_prefix,
+                'description'   => $request->description,
+                'is_active'     => $request->boolean('is_active', true),
             ]);
 
             $category->loadCount('templates');
@@ -95,6 +96,7 @@ class CategoryController extends Controller
 
             $category->update($request->only([
                 'name',
+                'number_prefix',
                 'description',
                 'is_active',
             ]));

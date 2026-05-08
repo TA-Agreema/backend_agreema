@@ -32,8 +32,9 @@ class UpdateCategoryRequest extends FormRequest
                 'max:255',
                 Rule::unique('contract_categories', 'name')->ignore($categoryId),
             ],
-            'description' => 'sometimes|nullable|string',
-            'is_active' => 'sometimes|boolean',
+            'description'   => 'sometimes|nullable|string',
+            'number_prefix' => 'sometimes|nullable|string|max:10',
+            'is_active'     => 'sometimes|boolean',
         ];
     }
 }

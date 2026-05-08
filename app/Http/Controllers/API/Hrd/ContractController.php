@@ -82,8 +82,14 @@ class ContractController extends Controller
         try {
             $validated = $request->validated();
 
+            // Auto-generate contract_number if not supplied, using category prefix
+            if (empty($validated['contract_number'])) {
+                $categoryId = isset($validated['category_id']) ? (int) $validated['category_id'] : null;
+                $validated['contract_number'] = $this->generateContractNumber($categoryId);
+            }
+
             $contract = DB::transaction(function () use ($validated) {
-                $contract = Contract::create(array_merge(Arr::except($validated, ['content']), [
+                $contract = Contract::create(array_merge(Arr::except($validated, ['content', 'field_values']), [
                     'created_by' => Auth::id(),
                 ]));
 
@@ -287,5 +293,65 @@ class ContractController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Generate a unique contract number based on category prefix.
+     * Format: [PREFIX]-[3-digit-seq]/SLAB/[ROMAN_MONTH]/[YEAR]
+     * Example: PKS-001/SLAB/V/2026  |  NDA-001/SLAB/V/2026
+     *
+     * @param int|null $categoryId 
+     */
+    private function generateContractNumber(?int $categoryId = null): string
+    {
+        $romanMonths = [
+            1 => 'I',  2 => 'II',  3 => 'III', 4 => 'IV',
+            5 => 'V',  6 => 'VI',  7 => 'VII', 8 => 'VIII',
+            9 => 'IX', 10 => 'X', 11 => 'XI', 12 => 'XII',
+        ];
+
+        // Resolve prefix: category's number_prefix → fallback 'SPK'
+        $prefix = 'SPK';
+        if ($categoryId) {
+            $cat = \App\Models\ContractCategory::find($categoryId);
+            if ($cat && !empty($cat->number_prefix)) {
+                $prefix = strtoupper(trim($cat->number_prefix));
+            }
+        }
+
+        $year  = now()->year;
+        $month = now()->month;
+        $roman = $romanMonths[$month];
+
+        // Count contracts of this prefix/month/year for the sequence
+        $count = Contract::whereYear('created_at', $year)
+            ->whereMonth('created_at', $month)
+            ->where('contract_number', 'like', "{$prefix}-%")
+            ->count();
+
+        $seq       = str_pad($count + 1, 3, '0', STR_PAD_LEFT);
+        $candidate = "{$prefix}-{$seq}/SLAB/{$roman}/{$year}";
+
+        // Ensure uniqueness (bump seq on collision)
+        while (Contract::where('contract_number', $candidate)->exists()) {
+            $count++;
+            $seq       = str_pad($count + 1, 3, '0', STR_PAD_LEFT);
+            $candidate = "{$prefix}-{$seq}/SLAB/{$roman}/{$year}";
+        }
+
+        return $candidate;
+    }
+
+    /**
+     * GET /api/contracts/generate-number?category_id={id}
+     * 
+     */
+    public function generateNumber(\Illuminate\Http\Request $request): JsonResponse
+    {
+        $categoryId = $request->query('category_id') ? (int) $request->query('category_id') : null;
+
+        return response()->json([
+            'contract_number' => $this->generateContractNumber($categoryId),
+        ]);
     }
 }
