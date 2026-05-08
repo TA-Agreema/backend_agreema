@@ -88,11 +88,20 @@ class ContractController extends Controller
                 ]));
 
                 if (!empty($validated['content'])) {
-                    $contract->versions()->create([
+                    $version = $contract->versions()->create([
                         'version_number' => 1,
                         'content' => $validated['content'],
                         'created_by' => Auth::id(),
                     ]);
+
+                    if (!empty($validated['field_values'])) {
+                        foreach ($validated['field_values'] as $fv) {
+                            $version->fieldValues()->create([
+                                'field_definition_id' => $fv['field_definition_id'],
+                                'value' => $fv['value'] ?? '',
+                            ]);
+                        }
+                    }
                 }
                 return $contract;
             });
@@ -173,11 +182,20 @@ class ContractController extends Controller
                     // Create new version only if content changed
                     if (!$latestVersion || $latestVersion->content !== $validated['content']) {
                         $nextVersion = ($latestVersion->version_number ?? 0) + 1;
-                        $contract->versions()->create([
+                        $version = $contract->versions()->create([
                             'version_number' => $nextVersion,
                             'content' => $validated['content'],
                             'created_by' => Auth::id(),
                         ]);
+
+                        if (!empty($validated['field_values'])) {
+                            foreach ($validated['field_values'] as $fv) {
+                                $version->fieldValues()->create([
+                                    'field_definition_id' => $fv['field_definition_id'],
+                                    'value' => $fv['value'] ?? '',
+                                ]);
+                            }
+                        }
                     }
                 }
             });

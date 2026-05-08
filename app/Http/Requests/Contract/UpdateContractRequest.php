@@ -25,6 +25,9 @@ class UpdateContractRequest extends FormRequest
             'template_id' => 'nullable|exists:templates,id',
             'parent_contract_id' => 'nullable|exists:contracts,id',
             'content' => 'nullable|string',
+            'field_values' => 'nullable|array',
+            'field_values.*.field_definition_id' => 'required|exists:fields_definitions,id',
+            'field_values.*.value' => 'nullable|string',
         ];
     }
 }
