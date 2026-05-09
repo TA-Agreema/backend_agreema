@@ -23,6 +23,8 @@ class UpdateContractRequest extends FormRequest
             'end_date' => 'nullable|date',
             'status' => 'nullable|string',
             'template_id' => 'nullable|exists:templates,id',
+            'partner_id' => 'nullable|exists:parties,id',
+            'partner_name' => 'nullable|string',
             'parent_contract_id' => 'nullable|exists:contracts,id',
             'content' => 'nullable|string',
             'field_values' => 'nullable|array',

@@ -12,7 +12,9 @@ class RoleResources extends JsonResource
         return [
             'id' => $this->id,
             'name' => $this->name,
+            'description' => $this->description,
             'permissions' => $this->permissions->pluck('name'),
+            'users_count' => $this->users_count ?? 0,
             'created_at' => $this->created_at,
         ];
     }

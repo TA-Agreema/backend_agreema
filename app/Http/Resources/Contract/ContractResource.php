@@ -26,6 +26,7 @@ class ContractResource extends JsonResource
             'category' => $this->template?->category?->name ?? ($this->category_id ? 'Kategori' : '-'),
             'category_id' => $this->category_id ?? $this->template?->category_id,
             'template_id' => $this->template_id,
+            'partner_id' => $this->parties?->firstWhere('party_order', 2)?->party_id ?? null,
             'content' => $this->latestVersion?->content ?? $this->template?->content ?? '',
             'status' => $this->mapStatus($this->status),
             'start_date' => $this->start_date?->format('d-m-Y'),

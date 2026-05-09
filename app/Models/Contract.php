@@ -28,7 +28,7 @@ class Contract extends Model
         'terminated_at' => 'datetime',
     ];
 
-    // ─── Relations ───────────────────────────────────────────
+    //  Relations 
 
     public function template(): BelongsTo
     {

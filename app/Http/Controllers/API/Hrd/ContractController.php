@@ -82,32 +82,65 @@ class ContractController extends Controller
         try {
             $validated = $request->validated();
 
-            // Auto-generate contract_number if not supplied, using category prefix
+            // Auto-generate contract_number if not supplied
             if (empty($validated['contract_number'])) {
                 $categoryId = isset($validated['category_id']) ? (int) $validated['category_id'] : null;
+                // If category_id not provided, try derive from template (if template_id provided)
+                if (empty($categoryId) && !empty($validated['template_id'])) {
+                    $tpl = \App\Models\Template::find($validated['template_id']);
+                    if ($tpl && !empty($tpl->category_id)) {
+                        $categoryId = (int) $tpl->category_id;
+                    }
+                }
                 $validated['contract_number'] = $this->generateContractNumber($categoryId);
             }
 
             $contract = DB::transaction(function () use ($validated) {
-                $contract = Contract::create(array_merge(Arr::except($validated, ['content', 'field_values']), [
+                $contract = Contract::create(array_merge(Arr::except($validated, ['content', 'partner_id']), [
                     'created_by' => Auth::id(),
                 ]));
 
+                // If partner_id provided, link it as party_order = 2 (partner)
+                if (!empty($validated['partner_id'])) {
+                    \App\Models\ContractParty::create([
+                        'contract_id' => $contract->id,
+                        'party_id' => (int) $validated['partner_id'],
+                        'party_order' => 2,
+                    ]);
+                } elseif (!empty($validated['partner_name'])) {
+                    // If partner_name provided (manual input), try to find an existing company party
+                    $name = trim($validated['partner_name']);
+                    $existing = \App\Models\Party::whereHas('companyDetail', function ($q) use ($name) {
+                        $q->whereRaw('LOWER(company_name) = ?', [strtolower($name)]);
+                    })->first();
+
+                    if (!$existing) {
+                        $party = \App\Models\Party::create(['party_type' => 'company']);
+                        \App\Models\PartyCompanyDetail::create([
+                            'party_id' => $party->id,
+                            'company_name' => $name,
+                            'address' => null,
+                        ]);
+                        $partyId = $party->id;
+                    } else {
+                        $partyId = $existing->id;
+                    }
+
+                    if (!empty($partyId)) {
+                        \App\Models\ContractParty::create([
+                            'contract_id' => $contract->id,
+                            'party_id' => $partyId,
+                            'party_order' => 2,
+                        ]);
+                    }
+                }
+
                 if (!empty($validated['content'])) {
-                    $version = $contract->versions()->create([
+                    $contract->versions()->create([
                         'version_number' => 1,
                         'content' => $validated['content'],
                         'created_by' => Auth::id(),
                     ]);
-
-                    if (!empty($validated['field_values'])) {
-                        foreach ($validated['field_values'] as $fv) {
-                            $version->fieldValues()->create([
-                                'field_definition_id' => $fv['field_definition_id'],
-                                'value' => $fv['value'] ?? '',
-                            ]);
-                        }
-                    }
                 }
                 return $contract;
             });
@@ -135,6 +168,78 @@ class ContractController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Generate a unique contract number based on category prefix.
+     * Prefix is derived from category.number_prefix if present, otherwise
+     * from the category name by taking the first character of each word
+     * (e.g. "Perjanjian Kerja Waktu Tertentu" -> PKWT).
+     *
+     * @param int|null $categoryId
+     * @return string
+     */
+    private function generateContractNumber(?int $categoryId = null): string
+    {
+        $romanMonths = [
+            1 => 'I',
+            2 => 'II',
+            3 => 'III',
+            4 => 'IV',
+            5 => 'V',
+            6 => 'VI',
+            7 => 'VII',
+            8 => 'VIII',
+            9 => 'IX',
+            10 => 'X',
+            11 => 'XI',
+            12 => 'XII',
+        ];
+
+        // Resolve prefix: prefer explicit number_prefix, otherwise derive from category name
+        $prefix = 'SPK';
+        if ($categoryId) {
+            $cat = \App\Models\ContractCategory::find($categoryId);
+            if ($cat) {
+                if (!empty($cat->number_prefix)) {
+                    $prefix = strtoupper(trim($cat->number_prefix));
+                } elseif (!empty($cat->name)) {
+                    // Split on non-word characters and take the first letter of each word
+                    $words = preg_split('/[^\p{L}\p{N}]+/u', trim($cat->name));
+                    $letters = [];
+                    foreach ($words as $w) {
+                        $w = trim($w);
+                        if ($w === '') continue;
+                        $letters[] = mb_substr($w, 0, 1, 'UTF-8');
+                    }
+                    if (count($letters) > 0) {
+                        $prefix = strtoupper(implode('', $letters));
+                    }
+                }
+            }
+        }
+
+        $year  = now()->year;
+        $month = now()->month;
+        $roman = $romanMonths[$month];
+
+        // Count contracts of this prefix/month/year for the sequence
+        $count = Contract::whereYear('created_at', $year)
+            ->whereMonth('created_at', $month)
+            ->where('contract_number', 'like', "{$prefix}-%")
+            ->count();
+
+        $seq       = str_pad($count + 1, 3, '0', STR_PAD_LEFT);
+        $candidate = "{$prefix}-{$seq}/SLAB/{$roman}/{$year}";
+
+        // Ensure uniqueness (bump seq on collision)
+        while (Contract::where('contract_number', $candidate)->exists()) {
+            $count++;
+            $seq       = str_pad($count + 1, 3, '0', STR_PAD_LEFT);
+            $candidate = "{$prefix}-{$seq}/SLAB/{$roman}/{$year}";
+        }
+
+        return $candidate;
     }
 
     /**
@@ -180,28 +285,58 @@ class ContractController extends Controller
             $validated = $request->validated();
 
             DB::transaction(function () use ($contract, $validated) {
-                $contract->update(Arr::except($validated, ['content']));
+                $contract->update(Arr::except($validated, ['content', 'partner_id']));
+
+                // Update or create partner ContractParty (party_order = 2)
+                if (array_key_exists('partner_id', $validated) || array_key_exists('partner_name', $validated)) {
+                    $partnerId = null;
+
+                    if (array_key_exists('partner_id', $validated) && $validated['partner_id']) {
+                        $partnerId = (int) $validated['partner_id'];
+                    } elseif (array_key_exists('partner_name', $validated) && $validated['partner_name']) {
+                        $name = trim($validated['partner_name']);
+                        $existing = \App\Models\Party::whereHas('companyDetail', function ($q) use ($name) {
+                            $q->whereRaw('LOWER(company_name) = ?', [strtolower($name)]);
+                        })->first();
+                        if (!$existing) {
+                            $party = \App\Models\Party::create(['party_type' => 'company']);
+                            \App\Models\PartyCompanyDetail::create([
+                                'party_id' => $party->id,
+                                'company_name' => $name,
+                                'address' => null,
+                            ]);
+                            $partnerId = $party->id;
+                        } else {
+                            $partnerId = $existing->id;
+                        }
+                    }
+
+                    $existingLink = $contract->parties()->where('party_order', 2)->first();
+                    if ($partnerId && $existingLink) {
+                        $existingLink->update(['party_id' => $partnerId]);
+                    } elseif ($partnerId && !$existingLink) {
+                        \App\Models\ContractParty::create([
+                            'contract_id' => $contract->id,
+                            'party_id' => $partnerId,
+                            'party_order' => 2,
+                        ]);
+                    } elseif (!$partnerId && $existingLink) {
+                        // remove partner link if partner_id null
+                        $existingLink->delete();
+                    }
+                }
 
                 if (!empty($validated['content'])) {
                     $latestVersion = $contract->latestVersion;
-                    
+
                     // Create new version only if content changed
                     if (!$latestVersion || $latestVersion->content !== $validated['content']) {
                         $nextVersion = ($latestVersion->version_number ?? 0) + 1;
-                        $version = $contract->versions()->create([
+                        $contract->versions()->create([
                             'version_number' => $nextVersion,
                             'content' => $validated['content'],
                             'created_by' => Auth::id(),
                         ]);
-
-                        if (!empty($validated['field_values'])) {
-                            foreach ($validated['field_values'] as $fv) {
-                                $version->fieldValues()->create([
-                                    'field_definition_id' => $fv['field_definition_id'],
-                                    'value' => $fv['value'] ?? '',
-                                ]);
-                            }
-                        }
                     }
                 }
             });
@@ -293,65 +428,5 @@ class ContractController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
-    }
-
-    /**
-     * Generate a unique contract number based on category prefix.
-     * Format: [PREFIX]-[3-digit-seq]/SLAB/[ROMAN_MONTH]/[YEAR]
-     * Example: PKS-001/SLAB/V/2026  |  NDA-001/SLAB/V/2026
-     *
-     * @param int|null $categoryId 
-     */
-    private function generateContractNumber(?int $categoryId = null): string
-    {
-        $romanMonths = [
-            1 => 'I',  2 => 'II',  3 => 'III', 4 => 'IV',
-            5 => 'V',  6 => 'VI',  7 => 'VII', 8 => 'VIII',
-            9 => 'IX', 10 => 'X', 11 => 'XI', 12 => 'XII',
-        ];
-
-        // Resolve prefix: category's number_prefix → fallback 'SPK'
-        $prefix = 'SPK';
-        if ($categoryId) {
-            $cat = \App\Models\ContractCategory::find($categoryId);
-            if ($cat && !empty($cat->number_prefix)) {
-                $prefix = strtoupper(trim($cat->number_prefix));
-            }
-        }
-
-        $year  = now()->year;
-        $month = now()->month;
-        $roman = $romanMonths[$month];
-
-        // Count contracts of this prefix/month/year for the sequence
-        $count = Contract::whereYear('created_at', $year)
-            ->whereMonth('created_at', $month)
-            ->where('contract_number', 'like', "{$prefix}-%")
-            ->count();
-
-        $seq       = str_pad($count + 1, 3, '0', STR_PAD_LEFT);
-        $candidate = "{$prefix}-{$seq}/SLAB/{$roman}/{$year}";
-
-        // Ensure uniqueness (bump seq on collision)
-        while (Contract::where('contract_number', $candidate)->exists()) {
-            $count++;
-            $seq       = str_pad($count + 1, 3, '0', STR_PAD_LEFT);
-            $candidate = "{$prefix}-{$seq}/SLAB/{$roman}/{$year}";
-        }
-
-        return $candidate;
-    }
-
-    /**
-     * GET /api/contracts/generate-number?category_id={id}
-     * 
-     */
-    public function generateNumber(\Illuminate\Http\Request $request): JsonResponse
-    {
-        $categoryId = $request->query('category_id') ? (int) $request->query('category_id') : null;
-
-        return response()->json([
-            'contract_number' => $this->generateContractNumber($categoryId),
-        ]);
     }
 }
