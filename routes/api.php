@@ -47,6 +47,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/internal', [SignerController::class, 'internalSigners'])->middleware('permission:create.contract');
     });
 
+    // Parties (partners)
+    Route::get('/partners', [\App\Http\Controllers\API\Hrd\PartyController::class, 'index'])->middleware('permission:read.contracts');
+
     // Contracts: daftar kontrak 
     Route::prefix('contracts')->group(function () {
         Route::get('/generate-number', [ContractController::class, 'generateNumber'])->middleware('permission:create.contract');
