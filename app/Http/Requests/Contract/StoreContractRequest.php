@@ -28,6 +28,11 @@ class StoreContractRequest extends FormRequest
             'field_values' => 'nullable|array',
             'field_values.*.field_definition_id' => 'required|exists:fields_definitions,id',
             'field_values.*.value' => 'nullable|string',
+            'signers' => 'nullable|array',
+            'signers.*.type' => 'required|in:internal,external',
+            'signers.*.name' => 'required|string',
+            'signers.*.title' => 'nullable|string',
+            'signers.*.email' => 'nullable|email',
         ];
     }
 }
