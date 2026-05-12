@@ -45,9 +45,22 @@ class ContractResource extends JsonResource
                         'description' => $addendum->description ?? '-',
                         'created_at' => $addendum->created_at?->format('d-m-Y'),
                         'effective_date' => $addendum->effective_date?->format('d-m-Y'),
+                        'document_path' => $addendum->document_path,
                     ];
                 })
                 ->values(),
+            'terminations' => $this->termination ? [
+                [
+                    'id' => $this->termination->id,
+                    'termination_number' => $this->termination->termination_number,
+                    'title' => $this->termination->title ?: "Terminasi {$this->termination->termination_number}",
+                    'termination_reason' => $this->termination->termination_reason,
+                    'termination_note' => $this->termination->termination_note ?? '-',
+                    'created_at' => $this->termination->created_at?->format('d-m-Y'),
+                    'effective_date' => $this->termination->effective_date?->format('d-m-Y'),
+                    'document_path' => $this->termination->termination_document_path,
+                ]
+            ] : [],
             'field_values' => $this->latestVersion?->fieldValues
                 ->map(function ($fv) {
                     return [
@@ -58,6 +71,41 @@ class ContractResource extends JsonResource
                         'value' => $fv->value,
                     ];
                 }) ?? [],
+            'signers' => $this->whenLoaded('signers', function () {
+                return $this->signers->map(function ($s) {
+                    return [
+                        'id' => $s->id,
+                        'user_id' => $s->user_id,
+                        'signer_type' => $s->signer_type,
+                        'signer_name' => $s->signer_name,
+                        'signer_role' => $s->signer_role,
+                        'external_email' => $s->external_email,
+                        'user' => $s->user ? [
+                            'name' => $s->user->name,
+                            'job_title' => $s->user->job_title,
+                        ] : null,
+                        'reviews' => $s->relationLoaded('reviews') ? $s->reviews->map(function ($r) {
+                            return [
+                                'id' => $r->id,
+                                'status' => $r->status,
+                                'notes' => $r->notes,
+                                'reviewed_at' => $r->reviewed_at?->format('d M Y, H:i'),
+                            ];
+                        })->values() : [],
+                    ];
+                });
+            }),
+            'status_logs' => $this->whenLoaded('statusLogs', function () {
+                return $this->statusLogs->map(function ($log) {
+                    return [
+                        'id' => $log->id,
+                        'old_status' => $log->old_status,
+                        'new_status' => $log->new_status,
+                        'changed_by' => $log->changedBy?->name ?? 'System',
+                        'created_at' => $log->created_at?->format('d M Y, H:i'),
+                    ];
+                });
+            }),
         ];
     }
 
