@@ -13,17 +13,14 @@ class ContractSigner extends Model
         'user_id',
         'external_email',
         'signer_type',
+        'signer_name',
+        'signer_role',
         'sequence',
     ];
 
     public function contract(): BelongsTo
     {
         return $this->belongsTo(Contract::class);
-    }
-
-    public function party(): BelongsTo
-    {
-        return $this->belongsTo(Party::class);
     }
 
     public function user(): BelongsTo
@@ -34,5 +31,15 @@ class ContractSigner extends Model
     public function signatureTokens(): HasMany
     {
         return $this->hasMany(ExternalSignatureToken::class);
+    }
+
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(ContractSignerReview::class);
+    }
+
+    public function signatures(): HasMany
+    {
+        return $this->hasMany(ContractSignerSignature::class);
     }
 }
