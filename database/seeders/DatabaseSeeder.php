@@ -23,9 +23,6 @@ class DatabaseSeeder extends Seeder
             UserSeeder::class,
             ContractCategorySeeder::class,
             FieldDefinitionSeeder::class,
-            TemplateSeeder::class,
-            PartySeeder::class,
-            ContractSeeder::class,
         ]);
     }
 }

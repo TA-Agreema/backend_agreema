@@ -10,12 +10,25 @@ use App\Http\Controllers\API\Admin\TemplateController;
 use App\Http\Controllers\API\Admin\FieldDefinitionController;
 use App\Http\Controllers\API\Hrd\ContractController;
 use App\Http\Controllers\API\Hrd\SignerController;
+use App\Http\Controllers\API\Hrd\ContractAddendumController;
+use App\Http\Controllers\API\Hrd\ContractTerminationController;
+use App\Http\Controllers\API\Manager\ContractReviewController;
+use App\Http\Controllers\API\External\ExternalContractController;
+use App\Http\Controllers\API\DashboardController;
 
 Route::post('/login', [AuthController::class, 'login']);
+
+// External Routes (No auth required)
+Route::prefix('external/contracts')->group(function () {
+    Route::get('/preview', [ExternalContractController::class, 'preview']);
+    Route::post('/review', [ExternalContractController::class, 'review']);
+});
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
+
+    Route::get('/dashboard', [DashboardController::class, 'index']);
 
     Route::prefix('users')->group(function () {
         Route::get('/', [UserController::class, 'index'])->middleware(('permission:read.all.users')); //melihat daftar keseluruhan user
@@ -59,6 +72,24 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/{id}', [ContractController::class, 'update'])->middleware('permission:update.contract');
         Route::delete('/{id}', [ContractController::class, 'destroy'])->middleware('permission:delete.contract');
         Route::patch('/{id}/toggle-status', [ContractController::class, 'toggleStatus'])->middleware('permission:update.contract');
+        Route::post('/{id}/submit', [ContractController::class, 'submit'])->middleware('permission:update.contract');
+
+        // Addendum Routes (HRD only)
+        Route::get('/{id}/addendums', [ContractAddendumController::class, 'index'])->middleware('permission:read.contracts');
+        Route::post('/{id}/addendums', [ContractAddendumController::class, 'store'])->middleware('permission:create.addendum');
+        Route::delete('/{contractId}/addendums/{addendumId}', [ContractAddendumController::class, 'destroy'])->middleware('permission:create.addendum');
+
+        // Termination Routes (HRD only)
+        Route::get('/{id}/terminations', [ContractTerminationController::class, 'index'])->middleware('permission:read.contracts');
+        Route::post('/{id}/terminations', [ContractTerminationController::class, 'store'])->middleware('permission:create.terminate');
+        Route::delete('/{contractId}/terminations/{terminationId}', [ContractTerminationController::class, 'destroy'])->middleware('permission:create.terminate');
+    });
+
+    // Manager Review Routes
+    Route::prefix('manager/contracts')->middleware('permission:read.contracts')->group(function () {
+        Route::get('/', [ContractReviewController::class, 'index']);
+        Route::get('/{id}', [ContractReviewController::class, 'show']);
+        Route::post('/{id}/review', [ContractReviewController::class, 'review']);
     });
 
     // Templates
