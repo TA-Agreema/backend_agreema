@@ -18,12 +18,20 @@ class UserRoleController extends Controller
 {
     public function index()
     {
+        // include permission names and user counts
         $roles = Role::where('guard_name', 'web')
             ->with('permissions:id,name')
             ->get();
+
+        // Compute users_count from pivot table to avoid morphedByMany errors
+        $roles->transform(function ($role) {
+            $role->users_count = DB::table('model_has_roles')->where('role_id', $role->id)->count();
+            return $role;
+        });
+
         return response()->json([
             'message' => 'User roles retrieved successfully',
-            'roles' => $roles,
+            'roles' => RoleResources::collection($roles)->resolve(),
         ]);
     }
 
@@ -47,6 +55,7 @@ class UserRoleController extends Controller
                 $role = Role::create([
                     'name' => $request->name,
                     'guard_name' => 'web',
+                    'description' => $request->description ?? null,
                 ]);
 
                 if ($request->has('permissions')) {
@@ -54,6 +63,8 @@ class UserRoleController extends Controller
                 }
             });
 
+            // Set users_count for response
+            $role->users_count = DB::table('model_has_roles')->where('role_id', $role->id)->count();
             return new RoleResources($role);
         } catch (Exception $e) {
             Log::error('Error creating Role', [
@@ -73,6 +84,9 @@ class UserRoleController extends Controller
         try {
             $role = Role::findById($id, 'web');
             $role->load('permissions');
+
+            // Set users_count for response
+            $role->users_count = DB::table('model_has_roles')->where('role_id', $role->id)->count();
 
             return new RoleResources($role);
         } catch (Exception $e) {
@@ -109,6 +123,7 @@ class UserRoleController extends Controller
 
                 $role->update([
                     'name' => $request->name,
+                    'description' => $request->description ?? null,
                 ]);
 
                 if ($request->has('permissions')) {
@@ -116,6 +131,8 @@ class UserRoleController extends Controller
                 }
             });
 
+            // Set users_count for response
+            $role->users_count = DB::table('model_has_roles')->where('role_id', $role->id)->count();
             return new RoleResources($role);
         } catch (Exception $e) {
             Log::error('Error updating Role', [

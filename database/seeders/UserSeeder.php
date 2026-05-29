@@ -38,14 +38,6 @@ class UserSeeder extends Seeder
                 'department' => 'Engineering',
                 'role' => 'hrd',
             ],
-            [
-                'email' => 'legal@agreema.com',
-                'name' => 'Legal Agreema',
-                'password' => 'password123',
-                'job_title' => 'Client',
-                'department' => null,
-                'role' => 'legal',
-            ],
         ];
 
         foreach ($users as $userData) {

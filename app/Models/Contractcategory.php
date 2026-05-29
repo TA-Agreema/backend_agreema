@@ -9,6 +9,7 @@ class ContractCategory extends Model
 {
     protected $fillable = [
         'name',
+        'number_prefix',
         'description',
         'is_active',
     ];

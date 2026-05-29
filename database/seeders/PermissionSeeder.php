@@ -30,6 +30,24 @@ class PermissionSeeder extends Seeder
             'update.user.roles',
             'update.user.status',
             'read.permission',
+            // Contract Category permissions
+            'read.contract_category',
+            'create.contract_category',
+            'update.contract_category',
+            'delete.contract_category',
+            // Contract permissions
+            'read.contracts',
+            'create.contract',
+            'update.contract',
+            'delete.contract',
+            'terminate.contract',
+            'download.contract',
+            'create.contract_addendum',
+            // Template permissions,
+            'read.template',
+            'create.template',
+            'update.template',
+            'delete.template',
         ];
 
         foreach ($permissions as $permission) {

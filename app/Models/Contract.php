@@ -2,32 +2,32 @@
 
 namespace App\Models;
 
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Contract extends Model
 {
     protected $fillable = [
         'contract_number',
+        'external_contract_number',
         'title',
         'start_date',
         'end_date',
-        'terminated_at',
         'status',
         'template_id',
         'created_by',
-        'parent_contract_id',
+        'signed_document_path',
     ];
 
     protected $casts = [
         'start_date'    => 'date',
         'end_date'      => 'date',
-        'terminated_at' => 'datetime',
     ];
 
-    // ─── Relations ───────────────────────────────────────────
+    //  Relations
 
     public function template(): BelongsTo
     {
@@ -37,11 +37,6 @@ class Contract extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
-    }
-
-    public function parentContract(): BelongsTo
-    {
-        return $this->belongsTo(Contract::class, 'parent_contract_id');
     }
 
     public function childContracts(): HasMany
@@ -59,14 +54,14 @@ class Contract extends Model
         return $this->hasOne(ContractVersion::class)->latestOfMany('version_number');
     }
 
-    public function parties(): HasMany
-    {
-        return $this->hasMany(ContractParty::class);
-    }
-
     public function signers(): HasMany
     {
         return $this->hasMany(ContractSigner::class);
+    }
+
+    public function parties(): HasMany
+    {
+        return $this->hasMany(ContractParty::class);
     }
 
     public function addendums(): HasMany
@@ -87,5 +82,19 @@ class Contract extends Model
     public function notifications(): HasMany
     {
         return $this->hasMany(Notification::class);
+    }
+
+    protected static function booted()
+    {
+        static::updated(function ($contract) {
+            if ($contract->isDirty('status')) {
+                ContractStatusLog::create([
+                    'contract_id' => $contract->id,
+                    'old_status' => $contract->getOriginal('status'),
+                    'new_status' => $contract->status,
+                    'changed_by' => Auth::id() ?? $contract->created_by,
+                ]);
+            }
+        });
     }
 }
