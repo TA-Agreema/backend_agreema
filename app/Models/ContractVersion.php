@@ -29,9 +29,4 @@ class ContractVersion extends Model
     {
         return $this->hasMany(ContractFieldValue::class);
     }
-
-    public function signerReviews(): HasMany
-    {
-        return $this->hasMany(ContractSignerReview::class);
-    }
 }

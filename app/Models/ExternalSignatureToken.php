@@ -10,9 +10,6 @@ class ExternalSignatureToken extends Model
     protected $fillable = [
         'contract_signer_id',
         'token',
-        'iteration',
-        'review_status',
-        'review_notes',
         'expired_at',
         'used_at',
     ];
