@@ -12,6 +12,7 @@ use Illuminate\Http\JsonResponse;
 use App\Mail\ContractRejectedMail;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use App\Http\Controllers\Controller;
 use App\Models\ContractSignerReview;
 use Illuminate\Support\Facades\Auth;
@@ -21,6 +22,8 @@ use App\Mail\ExternalSigningRequestMail;
 use App\Http\Resources\Contract\ContractResource;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Barryvdh\DomPDF\Facade\Pdf as PDF;
+use App\Models\ContractSignerSignature;
 
 class ContractReviewController extends Controller
 {
@@ -41,7 +44,7 @@ class ContractReviewController extends Controller
                 'template.category:id,name',
                 'creator:id,name',
                 'latestVersion',
-                'signers.user:id,name,email',
+                'signers.user:id,name,email,job_title',
                 'addendums',
             ])
                 ->whereIn('id', $contractIds)
@@ -76,9 +79,11 @@ class ContractReviewController extends Controller
                 'creator:id,name',
                 'latestVersion',
                 'versions' => fn($q) => $q->orderByDesc('version_number')->limit(5),
-                'signers.user:id,name,email',
+                'signers.user:id,name,email,job_title',
                 'signers.reviews' => fn($q) => $q->orderByDesc('iteration'),
+                'signers.signatures',
                 'addendums',
+                'statusLogs.changedBy:id,name',
             ])->findOrFail($id);
 
             return response()->json([
@@ -292,6 +297,322 @@ class ContractReviewController extends Controller
                     ->send(new ContractRejectedMail($contract, $reason));
             } catch (Exception $e) {
                 Log::error('Gagal mengirim email penolakan', [
+                    'contract_id' => $contract->id,
+                    'email'       => $signer->external_email,
+                    'error'       => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+     /**
+     * POST /api/manager/contracts/{id}/sign
+     */
+    public function sign(Request $request, int $id): JsonResponse
+    {
+        try {
+            $request->validate([
+                'signature_type' => 'required|in:canvas,upload',
+                'signature_data' => 'required_if:signature_type,canvas|string',
+                'signature_file' => 'required_if:signature_type,upload|file|mimes:pdf,png,jpg,jpeg|max:20480',
+            ]);
+
+            $contract = Contract::with('latestVersion', 'signers')->findOrFail($id);
+            $user     = Auth::user();
+
+            // Cari signer yang cocok dengan user yang login
+            $signer = ContractSigner::where('contract_id', $id)
+                ->where('user_id', $user->id)
+                ->first();
+
+            if (! $signer) {
+                return response()->json([
+                    'message' => 'Anda tidak terdaftar sebagai penandatangan kontrak ini.',
+                ], 403);
+            }
+
+            $latestVersion = $contract->latestVersion;
+            if (! $latestVersion) {
+                return response()->json([
+                    'message' => 'Kontrak tidak memiliki versi aktif.',
+                ], 422);
+            }
+
+            // Simpan file tanda tangan
+            $signaturePath = null;
+
+            if ($request->signature_type === 'canvas') {
+                $imageData = preg_replace('/^data:image\/\w+;base64,/', '', $request->signature_data);
+                $imageData = str_replace(' ', '+', $imageData);
+                $decoded   = base64_decode($imageData);
+
+                $filename      = 'signatures/' . $id . '_' . $user->id . '_' . time() . '.png';
+                Storage::disk('public')->put($filename, $decoded);
+                $signaturePath = $filename;
+            } else {
+                $file          = $request->file('signature_file');
+                $filename      = 'signed-documents/' . $id . '_' . time() . '.pdf';
+                $signaturePath = $file->storeAs('signed-documents', basename($filename), 'public');
+            }
+
+            // Hitung iterasi
+            $iteration = ContractSignerSignature::where('contract_signer_id', $signer->id)
+                ->max('iteration') ?? 0;
+            $iteration++;
+
+            // Simpan ke tabel contract_signer_signatures
+            ContractSignerSignature::create([
+                'contract_signer_id'  => $signer->id,
+                'contract_version_id' => $latestVersion->id,
+                'iteration'           => $iteration,
+                'signature_type'      => $request->signature_type,
+                'signature_path'      => $signaturePath,
+                'ip_address'          => $request->ip(),
+                'user_agent'          => $request->userAgent(),
+                'signed_at'           => now(),
+            ]);
+
+            // Cek apakah internal signer sudah menandatangani
+            $allInternalSigners = ContractSigner::where('contract_id', $id)
+                ->where('signer_type', 'internal')
+                ->pluck('id');
+
+            $signedSignerIds = ContractSignerSignature::whereIn('contract_signer_id', $allInternalSigners)
+                ->distinct('contract_signer_id')
+                ->pluck('contract_signer_id');
+
+            $allSigned = $allInternalSigners->count() > 0
+                && $allInternalSigners->count() === $signedSignerIds->count();
+
+            if ($allSigned) {
+                $contract->update(['status' => 'approved']);
+                $contract->load('signers');
+                $this->dispatchExternalSigningEmails($contract, $iteration + 1);
+
+                Notification::create([
+                    'user_id'     => $contract->created_by,
+                    'contract_id' => $contract->id,
+                    'type'        => 'all_internal_signed',
+                    'message'     => "Semua penandatangan internal telah menandatangani kontrak {$contract->contract_number}. Email dikirim ke pihak eksternal.",
+                    'is_read'     => false,
+                ]);
+            }
+            // Reload signers sebelum dispatch
+            $contract->load('signers');
+
+            // Reload contract dengan relasi lengkap
+            $contract->load([
+                'template.category:id,name',
+                'creator:id,name',
+                'latestVersion',
+                'signers.user:id,name,job_title',
+                'signers.signatures',
+                'statusLogs.changedBy:id,name',
+                'addendums:id,contract_id,addendum_number,description,effective_date,created_at',
+                'termination',
+            ]);
+
+            return response()->json([
+                'message' => 'Tanda tangan berhasil disimpan.',
+                'data'    => new ContractResource($contract),
+            ]);
+        } catch (Exception $e) {
+            Log::error('Manager: error signing contract', ['contract_id' => $id, 'error' => $e->getMessage()]);
+
+            return response()->json([
+                'message' => 'Gagal menyimpan tanda tangan.',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * GET /api/manager/contracts/{id}/download
+     * Generate dan download kontrak sebagai PDF.
+     */
+    public function download(int $id)
+    {
+        try {
+            $contract = Contract::with([
+                'latestVersion',
+                'creator:id,name',
+                'signers.user:id,name,job_title',
+                'template.category:id,name',
+                'parties.party.individualDetail:id,party_id,full_name',
+                'parties.party.companyDetail:id,party_id,company_name',
+            ])->findOrFail($id);
+
+            // ← Kalau sudah ada dokumen fisik yang diupload, kembalikan.
+            if ($contract->signed_document_path) {
+                $filePath = storage_path('app/public/' . $contract->signed_document_path);
+                if (file_exists($filePath)) {
+                    $filename = ($contract->contract_number ?? 'kontrak-' . $id) . '-signed.pdf';
+                    return response()->download($filePath, $filename, [
+                        'Content-Type' => 'application/pdf',
+                    ]);
+                }
+            }
+
+            // Fallback: generate dari template
+            $content = $contract->latestVersion?->content ?? '<p>Konten tidak tersedia.</p>';
+            $html = view('pdf.contract', [
+                'contract' => $contract,
+                'content'  => $content,
+            ])->render();
+
+            $pdf = Pdf::loadHTML($html)
+                ->setPaper('a4', 'portrait')
+                ->setOptions([
+                    'defaultFont'     => 'sans-serif',
+                    'isRemoteEnabled' => false,
+                    'isHtml5ParserEnabled' => true,
+                ]);
+
+            $filename = ($contract->contract_number ?? 'kontrak-' . $id) . '.pdf';
+            $filename = preg_replace('/[\/\\\\]/', '-', $filename);
+
+            return $pdf->download($filename);
+
+        } catch (Exception $e) {
+            Log::error('Manager: error downloading contract PDF', ['contract_id' => $id, 'error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Gagal mengunduh dokumen.',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * POST /api/manager/contracts/{id}/upload-signed
+     * Manager upload dokumen PDF yang sudah ditandatangani kedua pihak secara fisik.
+     * Setelah upload, pihak eksternal menerima email konfirmasi (bukan TTD lagi).
+     */
+    public function uploadSignedDocument(Request $request, int $id): JsonResponse
+    {
+        try {
+            $request->validate([
+                'signed_document' => 'required|file|mimes:pdf|max:20480',
+            ]);
+
+            $user     = Auth::user();
+            $contract = Contract::with(['latestVersion', 'signers', 'creator'])->findOrFail($id);
+
+            // Pastikan user adalah signer kontrak ini
+            $signer = ContractSigner::where('contract_id', $id)
+                ->where('user_id', $user->id)
+                ->first();
+
+            if (!$signer) {
+                return response()->json([
+                    'message' => 'Anda tidak terdaftar sebagai penandatangan kontrak ini.',
+                ], 403);
+            }
+
+            $latestVersion = $contract->latestVersion;
+            if (!$latestVersion) {
+                return response()->json([
+                    'message' => 'Kontrak tidak memiliki versi aktif.',
+                ], 422);
+            }
+
+            // Simpan file PDF yang sudah ditandatangani
+            $file          = $request->file('signed_document');
+            $filename      = $id . '_signed_' . time() . '.pdf';
+            $signaturePath = $file->storeAs('signed-documents', $filename, 'public');
+
+            // Hitung iterasi
+            $iteration = ContractSignerSignature::where('contract_signer_id', $signer->id)
+                ->max('iteration') ?? 0;
+            $iteration++;
+
+            DB::transaction(function () use ($contract, $signer, $latestVersion, $signaturePath, $iteration, $request) {
+                // Simpan record tanda tangan
+                ContractSignerSignature::create([
+                    'contract_signer_id'  => $signer->id,
+                    'contract_version_id' => $latestVersion->id,
+                    'iteration'           => $iteration,
+                    'signature_type'      => 'upload',
+                    'signature_path'      => $signaturePath,
+                    'ip_address'          => $request->ip(),
+                    'user_agent'          => $request->userAgent(),
+                    'signed_at'           => now(),
+                ]);
+
+                // Update status kontrak
+                $contract->update([
+                    'status' => 'approved',
+                    'signed_document_path' => $signaturePath,
+                ]);
+
+                // Kirim email konfirmasi ke pihak eksternal
+                $this->dispatchExternalConfirmationEmails($contract, $signaturePath, $iteration);
+
+                // Notifikasi ke HRD
+                Notification::create([
+                    'user_id'     => $contract->created_by,
+                    'contract_id' => $contract->id,
+                    'type'        => 'signed_document_uploaded',
+                    'message'     => "Dokumen kontrak {$contract->contract_number} yang sudah ditandatangani telah diupload. Menunggu konfirmasi pihak eksternal.",
+                    'is_read'     => false,
+                ]);
+            });
+
+            return response()->json([
+                'message'         => 'Dokumen berhasil diupload. Pihak eksternal akan menerima email konfirmasi.',
+                'contract_status' => $contract->fresh()->status,
+            ]);
+
+        } catch (Exception $e) {
+            Log::error('Manager: error uploading signed document', [
+                'contract_id' => $id,
+                'error'       => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Gagal mengupload dokumen.',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Kirim email konfirmasi ke external signer dengan link untuk menyetujui/menolak.
+     * Berbeda dengan dispatchExternalSigningEmails — ini tidak meminta TTD, hanya konfirmasi.
+     */
+    private function dispatchExternalConfirmationEmails(Contract $contract, string $documentPath, int $iteration): void
+    {
+        $externalSigners = $contract->signers()
+            ->where('signer_type', 'external')
+            ->whereNotNull('external_email')
+            ->get();
+
+        foreach ($externalSigners as $signer) {
+            // Nonaktifkan token lama
+            ExternalSignatureToken::where('contract_signer_id', $signer->id)
+                ->whereNull('used_at')
+                ->update(['expired_at' => now()]);
+
+            // Buat token baru
+            $token = Str::random(64);
+
+            ExternalSignatureToken::create([
+                'contract_signer_id' => $signer->id,
+                'token'              => $token,
+                'iteration'          => $iteration,
+                'review_status'      => 'pending',
+                'expired_at'         => now()->addDays(7),
+            ]);
+
+            // URL konfirmasi (bukan URL TTD)
+            $confirmUrl = config('app.frontend_url') . '/external/confirm?token=' . $token;
+
+            try {
+                // Gunakan ExternalSigningRequestMail yang sudah ada,
+                // atau buat ExternalConfirmationMail baru jika ingin teks berbeda
+                Mail::to($signer->external_email)
+                    ->send(new ExternalSigningRequestMail($contract, $confirmUrl, $iteration));
+            } catch (Exception $e) {
+                Log::error('Gagal mengirim email konfirmasi eksternal', [
                     'contract_id' => $contract->id,
                     'email'       => $signer->external_email,
                     'error'       => $e->getMessage(),

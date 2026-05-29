@@ -19,6 +19,7 @@ class Contract extends Model
         'status',
         'template_id',
         'created_by',
+        'signed_document_path',
     ];
 
     protected $casts = [
@@ -26,7 +27,7 @@ class Contract extends Model
         'end_date'      => 'date',
     ];
 
-    //  Relations 
+    //  Relations
 
     public function template(): BelongsTo
     {

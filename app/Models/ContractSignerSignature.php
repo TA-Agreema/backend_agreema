@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ContractSignerSignature extends Model
 {
+    public $timestamps = false;
+    
 	protected $fillable = [
 		'contract_signer_id',
 		'contract_version_id',

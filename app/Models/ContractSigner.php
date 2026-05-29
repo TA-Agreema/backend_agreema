@@ -40,6 +40,6 @@ class ContractSigner extends Model
 
     public function signatures(): HasMany
     {
-        return $this->hasMany(ContractSignerSignature::class);
+        return $this->hasMany(ContractSignerSignature::class, 'contract_signer_id');
     }
 }

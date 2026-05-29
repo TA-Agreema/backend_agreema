@@ -22,6 +22,7 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::prefix('external/contracts')->group(function () {
     Route::get('/preview', [ExternalContractController::class, 'preview']);
     Route::post('/review', [ExternalContractController::class, 'review']);
+    Route::post('/sign', [ExternalContractController::class, 'sign']);
 });
 
 Route::middleware('auth:sanctum')->group(function () {
@@ -63,7 +64,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Parties (partners)
     Route::get('/partners', [\App\Http\Controllers\API\Hrd\PartyController::class, 'index'])->middleware('permission:read.contracts');
 
-    // Contracts: daftar kontrak 
+    // Contracts: daftar kontrak
     Route::prefix('contracts')->group(function () {
         Route::get('/generate-number', [ContractController::class, 'generateNumber'])->middleware('permission:create.contract');
         Route::get('/', [ContractController::class, 'index'])->middleware('permission:read.contracts');
@@ -90,6 +91,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [ContractReviewController::class, 'index']);
         Route::get('/{id}', [ContractReviewController::class, 'show']);
         Route::post('/{id}/review', [ContractReviewController::class, 'review']);
+        Route::post('/{id}/sign', [ContractReviewController::class, 'sign']);
+        Route::get('/{id}/download', [ContractReviewController::class, 'download']);
+        Route::post('/{id}/upload-signed', [ContractReviewController::class, 'uploadSignedDocument']);
     });
 
     // Templates

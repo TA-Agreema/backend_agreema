@@ -32,10 +32,20 @@ class ContractController extends Controller
                     'creator:id,name',
                     'addendums:id,contract_id,addendum_number,description,effective_date,created_at',
                     'termination',
+                    'signers.reviews',
                     'parties.party.individualDetail:id,party_id,full_name',
                     'parties.party.companyDetail:id,party_id,company_name',
                 ])
                 ->orderByDesc('created_at');
+
+            // filter berdasarkan parameter 'archive'
+            if ($request->boolean('archive')) {
+                // Halaman arsip: hanya tampilkan rejected & terminated
+                $query->whereIn('status', ['rejected', 'terminated']);
+            } else {
+                // Daftar kontrak: sembunyikan rejected & terminated
+                $query->whereNotIn('status', ['rejected', 'terminated']);
+            }
 
             $validated = $request->validate([
                 'search' => 'nullable|string|max:255',
@@ -283,6 +293,7 @@ class ContractController extends Controller
                 'creator:id,name',
                 'signers.user',
                 'signers.reviews',
+                'signers.signatures', 
                 'statusLogs.changedBy:id,name',
                 'addendums:id,contract_id,addendum_number,description,effective_date,created_at',
                 'termination',

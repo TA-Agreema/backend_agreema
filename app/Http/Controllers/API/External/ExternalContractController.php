@@ -6,6 +6,7 @@ use Exception;
 use App\Models\Contract;
 use App\Models\ContractSigner;
 use App\Models\ContractSignerReview;
+use App\Models\ContractSignerSignature;
 use App\Models\ExternalSignatureToken;
 use App\Models\Notification;
 use Illuminate\Http\JsonResponse;
@@ -33,13 +34,26 @@ class ExternalContractController extends Controller
             return response()->json(['message' => 'Token tidak ditemukan.'], 400);
         }
 
-        $tokenRecord = ExternalSignatureToken::with([
-            'contractSigner.contract.latestVersion',
-            'contractSigner.contract.template.category:id,name',
-            'contractSigner.contract.creator:id,name',
-        ])
-            ->where('token', $tokenStr)
-            ->first();
+        $validated = $request->validate([
+            'token' => 'required|string',
+        ]);
+
+        try {
+            $tokenRecord = ExternalSignatureToken::with([
+                'contractSigner.contract.latestVersion',
+                'contractSigner.contract.template.category:id,name',
+                'contractSigner.contract.creator:id,name',
+                'contractSigner.contract.signers.user:id,name,email,job_title',
+                'contractSigner.contract.signers.reviews',
+                'contractSigner.contract.signers.signatures', // untuk cek is_signed & ambil TTD internal
+                'contractSigner.signatures', // untuk cek is_signed & ambil TTD signer yang memiliki token
+            ])
+                ->where('token', $tokenStr)
+                ->first();
+        } catch (Exception $e) {
+            Log::error('External preview error', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
+        };
 
         if (!$tokenRecord) {
             return response()->json(['message' => 'Token tidak valid.'], 404);
@@ -49,18 +63,21 @@ class ExternalContractController extends Controller
             return response()->json(['message' => 'Token sudah kadaluarsa.'], 410);
         }
 
-        if ($tokenRecord->isUsed()) {
-            return response()->json(['message' => 'Token ini sudah digunakan sebelumnya. Tanggapan Anda telah tercatat.'], 409);
-        }
-
         $signer   = $tokenRecord->contractSigner;
         $contract = $signer->contract;
+
+        $isSigned = $tokenRecord->isUsed();
+        $signature = $isSigned
+            ? ContractSignerSignature::where('contract_signer_id', $signer->id)->orderBy('signed_at', 'desc')->first()
+            : null;
 
         return response()->json([
             'message'   => 'Contract retrieved successfully',
             'iteration' => $tokenRecord->iteration,
             'signer_id' => $signer->id,
             'data'      => new ContractResource($contract),
+            'is_signed' => $isSigned,
+            'signature_path' => $signature?->signature_path,
         ]);
     }
 
@@ -72,7 +89,7 @@ class ExternalContractController extends Controller
     {
         $validated = $request->validate([
             'token'  => 'required|string',
-            'status' => 'required|in:approved,revised',
+            'status' => 'required|in:approved,revised,confirmed',
             'notes'  => 'nullable|string|max:2000',
         ]);
 
@@ -84,6 +101,7 @@ class ExternalContractController extends Controller
             $tokenRecord = ExternalSignatureToken::with([
                 'contractSigner.contract.creator',
                 'contractSigner.contract.signers',
+                'contractSigner.contract.latestVersion',
             ])
                 ->where('token', $validated['token'])
                 ->first();
@@ -103,7 +121,6 @@ class ExternalContractController extends Controller
             $signer   = $tokenRecord->contractSigner;
             $contract = $signer->contract;
 
-            // Kontrak harus dalam status approved (setelah manager approve)
             if ($contract->status !== 'approved') {
                 return response()->json(['message' => 'Kontrak belum siap untuk ditandatangani.'], 422);
             }
@@ -113,8 +130,38 @@ class ExternalContractController extends Controller
                 return response()->json(['message' => 'Kontrak tidak memiliki versi konten.'], 422);
             }
 
+            // Handle confirmed (upload manual — eksternal hanya konfirmasi tanpa TTD)
+            if ($validated['status'] === 'confirmed') {
+                DB::transaction(function () use ($contract, $signer, $tokenRecord, $latestVersion, $validated) {
+                    ContractSignerReview::create([
+                        'contract_signer_id'  => $signer->id,
+                        'contract_version_id' => $latestVersion->id,
+                        'iteration'           => $tokenRecord->iteration,
+                        'status'              => 'approved',
+                        'notes'               => $validated['notes'] ?? null,
+                        'reviewed_at'         => now(),
+                    ]);
+
+                    $tokenRecord->update([
+                        'used_at'       => now(),
+                        'review_status' => 'approved',
+                    ]);
+
+                    $contract->update(['status' => 'active']);
+
+                    Notification::create([
+                        'user_id'     => $contract->created_by,
+                        'contract_id' => $contract->id,
+                        'type'        => 'contract_activated',
+                        'message'     => "Kontrak {$contract->contract_number} telah disetujui pihak eksternal dan kini aktif.",
+                        'is_read'     => false,
+                    ]);
+                });
+
+                return response()->json(['message' => 'Kontrak berhasil disetujui dan kini aktif.']);
+            }
+
             DB::transaction(function () use ($contract, $signer, $tokenRecord, $latestVersion, $validated) {
-                // Catat review external ke tabel contract_signer_reviews
                 ContractSignerReview::create([
                     'contract_signer_id'  => $signer->id,
                     'contract_version_id' => $latestVersion->id,
@@ -124,19 +171,16 @@ class ExternalContractController extends Controller
                     'reviewed_at'         => now(),
                 ]);
 
-                // Update status token
                 $tokenRecord->update([
-                    'used_at'        => now(),
-                    'review_status'  => $validated['status'],
-                    'review_notes'   => $validated['notes'] ?? null,
+                    'used_at'       => now(),
+                    'review_status' => $validated['status'],
+                    'review_notes'  => $validated['notes'] ?? null,
                 ]);
 
                 if ($validated['status'] === 'approved') {
-                    // Cek apakah SEMUA external signer pada iterasi ini sudah approved
                     $allApproved = $this->checkAllExternalApproved($contract, $tokenRecord->iteration);
 
                     if ($allApproved) {
-                        // Kontrak siap ditandatangani / fully approved
                         $contract->update(['status' => 'active']);
 
                         Notification::create([
@@ -147,7 +191,6 @@ class ExternalContractController extends Controller
                             'is_read'     => false,
                         ]);
                     } else {
-                        // Notifikasi sebagian saja
                         Notification::create([
                             'user_id'     => $contract->created_by,
                             'contract_id' => $contract->id,
@@ -157,17 +200,14 @@ class ExternalContractController extends Controller
                         ]);
                     }
                 } else {
-                    // External minta revisi → kontrak kembali ke revision
                     $contract->update(['status' => 'revision']);
 
-                    // Nonaktifkan semua token iterasi ini (batalkan proses signing)
                     ExternalSignatureToken::whereHas('contractSigner', function ($q) use ($contract) {
                         $q->where('contract_id', $contract->id);
                     })
                         ->whereNull('used_at')
                         ->update(['expired_at' => now()]);
 
-                    // Notifikasi HRD untuk perbaikan
                     Notification::create([
                         'user_id'     => $contract->created_by,
                         'contract_id' => $contract->id,
@@ -183,8 +223,93 @@ class ExternalContractController extends Controller
                     ? 'Kontrak berhasil disetujui.'
                     : 'Permintaan revisi berhasil dikirim.',
             ]);
+
         } catch (Exception $e) {
             Log::error('External review error', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function sign(Request $request): JsonResponse
+    {
+        $request->validate([
+            'token'          => 'required|string',
+            'signature_type' => 'required|in:canvas,upload',
+            'signature_data' => 'required_if:signature_type,canvas|string',
+            'signature_file' => 'required_if:signature_type,upload|file|mimes:pdf,png,jpg,jpeg',
+        ]);
+
+        try {
+            $tokenRecord = ExternalSignatureToken::with('contractSigner.contract')
+                ->where('token', $request->token)
+                ->first();
+
+            if (!$tokenRecord) return response()->json(['message' => 'Token tidak valid.'], 404);
+            if ($tokenRecord->isExpired()) return response()->json(['message' => 'Token sudah kadaluarsa.'], 410);
+            if ($tokenRecord->isUsed()) return response()->json(['message' => 'Token sudah digunakan.'], 409);
+
+            $signer   = $tokenRecord->contractSigner;
+            $contract = $signer->contract;
+
+            if ($contract->status !== 'approved') {
+                return response()->json(['message' => 'Kontrak belum siap untuk ditandatangani.'], 422);
+            }
+
+            DB::transaction(function () use ($request, $signer, $contract, $tokenRecord) {
+                $signaturePath = null;
+
+                if ($request->signature_type === 'canvas') {
+                    $imageData = str_replace('data:image/png;base64,', '', $request->signature_data);
+                    $imageData = base64_decode($imageData);
+                    $filename  = 'signatures/' . uniqid() . '.png';
+                    \Storage::disk('public')->put($filename, $imageData);
+                    $signaturePath = $filename;
+                } else {
+                    $signaturePath = $request->file('signature_file')
+                        ->store('signatures', 'public');
+                }
+
+                $latestVersion = $contract->versions()->latest()->first();
+
+                $iteration = ContractSignerSignature::where('contract_signer_id', $signer->id)
+                    ->count() + 1;
+
+                ContractSignerSignature::create([
+                    'contract_signer_id'  => $signer->id,
+                    'contract_version_id' => $latestVersion->id,
+                    'iteration'           => $iteration,
+                    'signature_type'      => $request->signature_type,
+                    'signature_path'      => $signaturePath,
+                    'ip_address'          => $request->ip(),
+                    'user_agent'          => $request->userAgent(),
+                    'signed_at'           => now(),
+                ]);
+
+                $tokenRecord->update([
+                    'used_at'       => now(),
+                    'review_status' => 'approved',
+                ]);
+
+                // ✅ TAMBAHAN: Cek apakah semua signer sudah TTD
+                $allSigned = $contract->signers()
+                    ->whereDoesntHave('signatures')
+                    ->doesntExist();
+
+                if ($allSigned) {
+                    $contract->update(['status' => 'active']);
+                }
+            });
+
+            // ✅ TAMBAHAN: Ambil status terbaru setelah transaksi selesai
+            $contract->refresh();
+
+            return response()->json([
+                'message'         => 'Tanda tangan berhasil disimpan.',
+                'contract_status' => $contract->status, // 'active' jika semua sudah TTD
+            ]);
+
+        } catch (Exception $e) {
+            Log::error('External sign error', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
         }
     }

@@ -17,6 +17,13 @@ class ContractResource extends JsonResource
     {
         $partnerParty = $this->resolvePartner();
 
+        // Ambil signature type dari internal signer terakhir yang TTD
+        $lastInternalSignature = $this->signers
+            ->where('signer_type', 'internal')
+            ->flatMap(fn($s) => $s->signatures ?? collect())
+            ->sortByDesc('signed_at')
+            ->first();
+
         return [
             'id' => $this->id,
             'contract_number' => $this->contract_number,
@@ -32,6 +39,10 @@ class ContractResource extends JsonResource
             'start_date' => $this->start_date?->format('d-m-Y'),
             'end_date' => $this->end_date?->format('d-m-Y'),
             'created_by' => $this->creator?->name ?? '-',
+            'sign_method' => $lastInternalSignature?->signature_type ?? null,
+            'signed_document_url' => $this->signed_document_path
+                ? asset('storage/' . $this->signed_document_path)
+                : null,
             'addendums' => $this->addendums
                 ->map(function ($addendum) {
                     $title = $addendum->description
@@ -84,6 +95,19 @@ class ContractResource extends JsonResource
                             'name' => $s->user->name,
                             'job_title' => $s->user->job_title,
                         ] : null,
+                        'signatures' => $s->relationLoaded('signatures')
+                            ? $s->signatures->map(function ($sig) {
+                                return [
+                                    'id'             => $sig->id,
+                                    'signature_type' => $sig->signature_type,
+                                    'signature_path' => $sig->signature_path
+                                        ? asset('storage/' . $sig->signature_path)
+                                        : null,
+                                    'signed_at'      => $sig->signed_at,
+                                    'iteration'      => $sig->iteration,
+                                ];
+                            })
+                            : [],
                         'reviews' => $s->relationLoaded('reviews') ? $s->reviews->map(function ($r) {
                             return [
                                 'id' => $r->id,
@@ -95,17 +119,13 @@ class ContractResource extends JsonResource
                     ];
                 });
             }),
-            'status_logs' => $this->whenLoaded('statusLogs', function () {
-                return $this->statusLogs->map(function ($log) {
-                    return [
-                        'id' => $log->id,
-                        'old_status' => $log->old_status,
-                        'new_status' => $log->new_status,
-                        'changed_by' => $log->changedBy?->name ?? 'System',
-                        'created_at' => $log->created_at?->format('d M Y, H:i'),
-                    ];
-                });
-            }),
+            'status_logs' => $this->statusLogs->map(fn($log) => [
+                'id'         => $log->id,
+                'old_status' => $log->old_status,
+                'new_status' => $log->new_status,
+                'changed_by' => $log->changedBy?->name ?? 'System',
+                'created_at' => $log->created_at?->format('d M Y, H:i'),
+            ]),
         ];
     }
 
