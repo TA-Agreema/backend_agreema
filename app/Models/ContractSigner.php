@@ -10,17 +10,33 @@ class ContractSigner extends Model
 {
     protected $fillable = [
         'contract_id',
+        'party_id',
         'user_id',
         'external_email',
         'signer_type',
-        'signer_name',
-        'signer_role',
         'sequence',
+        'review_status',
+        'review_note',
+        'reviewed_at',
+        'sign_status',
+        'signature_type',
+        'signature_path',
+        'signed_at',
+    ];
+
+    protected $casts = [
+        'reviewed_at' => 'datetime',
+        'signed_at'   => 'datetime',
     ];
 
     public function contract(): BelongsTo
     {
         return $this->belongsTo(Contract::class);
+    }
+
+    public function party(): BelongsTo
+    {
+        return $this->belongsTo(Party::class);
     }
 
     public function user(): BelongsTo
@@ -31,15 +47,5 @@ class ContractSigner extends Model
     public function signatureTokens(): HasMany
     {
         return $this->hasMany(ExternalSignatureToken::class);
-    }
-
-    public function reviews(): HasMany
-    {
-        return $this->hasMany(ContractSignerReview::class);
-    }
-
-    public function signatures(): HasMany
-    {
-        return $this->hasMany(ContractSignerSignature::class, 'contract_signer_id');
     }
 }

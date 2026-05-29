@@ -9,8 +9,6 @@ class ContractTermination extends Model
 {
     protected $fillable = [
         'contract_id',
-        'termination_number',
-        'title',
         'status',
         'termination_reason',
         'termination_note',
