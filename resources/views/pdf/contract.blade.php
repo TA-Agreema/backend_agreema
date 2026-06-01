@@ -75,12 +75,12 @@
 
         .contract-body table td,
         .contract-body table th {
-            border: 1px solid #d1d5db;
+            border: 1px solid #ffffff;
             padding: 6px 8px;
         }
 
         .contract-body table th {
-            background-color: #f3f4f6;
+            background-color: #ffffff;
             font-weight: bold;
         }
 
@@ -115,11 +115,24 @@
         }
 
         .signature-box {
-            border: 1px solid #e5e7eb;
+            border: 1px solid #ffffff;
             border-radius: 8px;
             height: 90px;
-            background-color: #f9fafb;
+            background-color: #ffffff;
             margin-bottom: 8px;
+            text-align: center;
+            padding: 4px;
+        }
+
+        .signature-box img {
+            max-height: 80px;
+            max-width: 100%;
+        }
+
+        .signature-box .unasigned {
+            font-size: 10px;
+            color: #d1d5db;
+            line-height: 80px;
         }
 
         .signer-name {
@@ -136,6 +149,12 @@
         .signer-email {
             font-size: 10px;
             color: #9ca3af;
+        }
+
+        .signer-date {
+            font-size: 9px;
+            color: #9ca3af;
+            margin-top: 2px;
         }
     </style>
 </head>
@@ -166,7 +185,14 @@
         <div class="signature-grid">
             @foreach($contract->signers as $signer)
             <div class="signature-item">
-                <div class="signature-box"></div>
+                <div class="signature-box">
+                    @if(isset($signatureImages[$signer->id]))
+                        {{-- Gambar TTD di-embed sebagai base64 --}}
+                        <img src="{{ $signatureImages[$signer->id] }}" alt="Tanda tangan">
+                    @else
+                        <span class="unsigned">Belum ditandatangani</span>
+                    @endif
+                </div>
                 <p class="signer-name">
                     {{ $signer->signer_type === 'internal'
                         ? ($signer->user?->name ?? '-')
@@ -179,6 +205,9 @@
                 </p>
                 @if($signer->signer_type === 'external' && $signer->external_email)
                     <p class="signer-email">{{ $signer->external_email }}</p>
+                @endif
+                @if(isset($signatureDates[$signer->id]))
+                    <p class="signer-date">{{ $signatureDates[$signer->id] }}</p>
                 @endif
             </div>
             @endforeach
