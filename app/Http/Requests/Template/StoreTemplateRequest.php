@@ -24,6 +24,7 @@ class StoreTemplateRequest extends FormRequest
         return [
             'name'        => 'required|string|max:255|unique:templates,name',
             'content'     => 'required|string',
+            'paper_size'   => 'nullable|in:a4,f4',
             'category_id' => 'required|integer|exists:contract_categories,id',
             'is_active'   => 'nullable|boolean',
         ];

@@ -29,6 +29,7 @@ class ContractResource extends JsonResource
             'contract_number' => $this->contract_number,
             'external_contract_number' => $this->external_contract_number,
             'title' => $this->title,
+            'paper_size' => $this->paper_size ?? $this->template?->paper_size ?? 'f4',
             'partner' => $partnerParty,
             'category' => $this->template?->category?->name ?? ($this->category_id ? 'Kategori' : '-'),
             'category_id' => $this->category_id ?? $this->template?->category_id,

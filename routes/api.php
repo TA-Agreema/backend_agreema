@@ -99,6 +99,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Templates
     Route::prefix('templates')->group(function () {
         Route::get('/', [TemplateController::class, 'index'])->middleware('permission:read.template');
+        Route::get('/{id}/download', [TemplateController::class, 'download'])->middleware('permission:read.template');
         Route::get('/{id}', [TemplateController::class, 'show'])->middleware('permission:read.template');
         Route::post('/', [TemplateController::class, 'store'])->middleware('permission:create.template');
         Route::patch('/{id}', [TemplateController::class, 'update'])->middleware('permission:update.template');
@@ -114,3 +115,4 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}', [FieldDefinitionController::class, 'destroy']);
     });
 });
+
