@@ -64,7 +64,10 @@ class ContractTerminationController extends Controller
 
             $termination = DB::transaction(function () use ($contract, $validated, $documentPath) {
                 // Update status kontrak menjadi terminated
-                $contract->update(['status' => 'terminated']);
+                $contract->update([
+                    'status' => 'terminated',
+                    'end_date' => $validated['effective_date'],
+                ]);
 
                 return ContractTermination::create([
                     'contract_id'               => $contract->id,

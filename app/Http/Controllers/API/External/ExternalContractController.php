@@ -4,22 +4,23 @@ namespace App\Http\Controllers\API\External;
 
 use Exception;
 use App\Models\Contract;
-use App\Models\ContractSigner;
-use App\Models\ContractSignerReview;
-use App\Models\ContractSignerSignature;
-use App\Models\ExternalSignatureToken;
-use App\Models\Notification;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
-use App\Http\Controllers\Controller;
-use App\Http\Resources\Contract\ContractResource;
-use App\Mail\ExternalSigningRequestMail;
+use App\Models\Notification;
+use Illuminate\Http\Request;
+use App\Models\ContractSigner;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 use App\Mail\ContractActivatedMail;
+use Illuminate\Support\Facades\Log;
+use App\Http\Controllers\Controller;
+use App\Models\ContractSignerReview;
 use App\Services\ContractPdfService;
+use Illuminate\Support\Facades\Mail;
+use App\Models\ExternalSignatureToken;
+use App\Models\ContractSignerSignature;
+use Illuminate\Support\Facades\Storage;
+// use App\Mail\ExternalSigningRequestMail;
+use App\Http\Resources\Contract\ContractResource;
 
 class ExternalContractController extends Controller
 {
@@ -228,7 +229,6 @@ class ExternalContractController extends Controller
                     ? 'Kontrak berhasil disetujui.'
                     : 'Permintaan revisi berhasil dikirim.',
             ]);
-
         } catch (Exception $e) {
             Log::error('External review error', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
@@ -267,7 +267,7 @@ class ExternalContractController extends Controller
                     $imageData = str_replace('data:image/png;base64,', '', $request->signature_data);
                     $imageData = base64_decode($imageData);
                     $filename  = 'signatures/' . uniqid() . '.png';
-                    \Storage::disk('public')->put($filename, $imageData);
+                    Storage::disk('public')->put($filename, $imageData);
                     $signaturePath = $filename;
                 } else {
                     $signaturePath = $request->file('signature_file')
@@ -315,14 +315,13 @@ class ExternalContractController extends Controller
                 'message'         => 'Tanda tangan berhasil disimpan.',
                 'contract_status' => $contract->status, // 'active' jika semua sudah TTD
             ]);
-
         } catch (Exception $e) {
             Log::error('External sign error', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
         }
     }
 
-        /**
+    /**
      * Kirim email notifikasi ke semua pihak (internal + eksternal) saat kontrak aktif.
      * Generate PDF terlebih dahulu dan simpan path-nya ke contract.
      */

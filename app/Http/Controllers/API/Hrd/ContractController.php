@@ -30,7 +30,7 @@ class ContractController extends Controller
                 ->with([
                     'template.category:id,name',
                     'creator:id,name',
-                    'addendums:id,contract_id,addendum_number,description,effective_date,created_at',
+                    'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
                     'termination',
                     'signers.reviews',
                     'parties.party.individualDetail:id,party_id,full_name',
@@ -171,7 +171,7 @@ class ContractController extends Controller
 
                 if (!empty($validated['content'])) {
                     $contract->versions()->create([
-                        'version_number' => 1,
+                        'version_number' => 'V1',
                         'content' => $validated['content'],
                         'created_by' => Auth::id(),
                     ]);
@@ -185,10 +185,11 @@ class ContractController extends Controller
                 'signers.user',
                 'signers.reviews',
                 'statusLogs.changedBy:id,name',
-                'addendums:id,contract_id,addendum_number,description,effective_date,created_at',
+                'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
                 'termination',
                 'parties.party.individualDetail:id,party_id,full_name',
                 'parties.party.companyDetail:id,party_id,company_name',
+                'versions.creator:id,name',
             ]);
 
             return response()->json([
@@ -293,12 +294,13 @@ class ContractController extends Controller
                 'creator:id,name',
                 'signers.user',
                 'signers.reviews',
-                'signers.signatures', 
+                'signers.signatures',
                 'statusLogs.changedBy:id,name',
-                'addendums:id,contract_id,addendum_number,description,effective_date,created_at',
+                'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
                 'termination',
                 'parties.party.individualDetail:id,party_id,full_name',
                 'parties.party.companyDetail:id,party_id,company_name',
+                'versions.creator:id,name',
             ])->findOrFail($id);
 
             return response()->json([
@@ -428,9 +430,9 @@ class ContractController extends Controller
 
                     // Create new version only if content changed
                     if (!$latestVersion || $latestVersion->content !== $validated['content']) {
-                        $nextVersion = ($latestVersion->version_number ?? 0) + 1;
+                        $nextVersion = $contract->versions()->count() + 1;
                         $contract->versions()->create([
-                            'version_number' => $nextVersion,
+                            'version_number' => 'V' . $nextVersion,
                             'content' => $validated['content'],
                             'created_by' => Auth::id(),
                         ]);
@@ -444,10 +446,11 @@ class ContractController extends Controller
                 'signers.user',
                 'signers.reviews',
                 'statusLogs.changedBy:id,name',
-                'addendums:id,contract_id,addendum_number,description,effective_date,created_at',
+                'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
                 'termination',
                 'parties.party.individualDetail:id,party_id,full_name',
                 'parties.party.companyDetail:id,party_id,company_name',
+                'versions.creator:id,name',
             ]);
 
             return response()->json([

@@ -77,13 +77,13 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Addendum Routes (HRD only)
         Route::get('/{id}/addendums', [ContractAddendumController::class, 'index'])->middleware('permission:read.contracts');
-        Route::post('/{id}/addendums', [ContractAddendumController::class, 'store'])->middleware('permission:create.addendum');
-        Route::delete('/{contractId}/addendums/{addendumId}', [ContractAddendumController::class, 'destroy'])->middleware('permission:create.addendum');
+        Route::post('/{id}/addendums', [ContractAddendumController::class, 'store'])->middleware('permission:create.addendum|create.contract_addendum');
+        Route::delete('/{contractId}/addendums/{addendumId}', [ContractAddendumController::class, 'destroy'])->middleware('permission:create.addendum|create.contract_addendum');
 
         // Termination Routes (HRD only)
         Route::get('/{id}/terminations', [ContractTerminationController::class, 'index'])->middleware('permission:read.contracts');
-        Route::post('/{id}/terminations', [ContractTerminationController::class, 'store'])->middleware('permission:create.terminate');
-        Route::delete('/{contractId}/terminations/{terminationId}', [ContractTerminationController::class, 'destroy'])->middleware('permission:create.terminate');
+        Route::post('/{id}/terminations', [ContractTerminationController::class, 'store'])->middleware('permission:create.terminate|terminate.contract');
+        Route::delete('/{contractId}/terminations/{terminationId}', [ContractTerminationController::class, 'destroy'])->middleware('permission:create.terminate|terminate.contract');
     });
 
     // Manager Review Routes
