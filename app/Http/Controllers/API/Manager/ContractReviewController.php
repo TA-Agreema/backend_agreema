@@ -78,8 +78,8 @@ class ContractReviewController extends Controller
                 'template.category:id,name',
                 'creator:id,name',
                 'latestVersion',
-                'versions' => fn($q) => $q->orderByDesc('version_number')->limit(5),
                 'signers.user:id,name,email,job_title',
+                'versions' => fn($q) => $q->with('creator:id,name')->orderByDesc('id')->limit(5),
                 'signers.reviews' => fn($q) => $q->orderByDesc('iteration'),
                 'signers.signatures',
                 'addendums',
@@ -305,7 +305,7 @@ class ContractReviewController extends Controller
         }
     }
 
-     /**
+    /**
      * POST /api/manager/contracts/{id}/sign
      */
     public function sign(Request $request, int $id): JsonResponse
@@ -472,7 +472,6 @@ class ContractReviewController extends Controller
             $filename = preg_replace('/[\/\\\\]/', '-', $filename);
 
             return $pdf->download($filename);
-
         } catch (Exception $e) {
             Log::error('Manager: error downloading contract PDF', ['contract_id' => $id, 'error' => $e->getMessage()]);
             return response()->json([
@@ -561,7 +560,6 @@ class ContractReviewController extends Controller
                 'message'         => 'Dokumen berhasil diupload. Pihak eksternal akan menerima email konfirmasi.',
                 'contract_status' => $contract->fresh()->status,
             ]);
-
         } catch (Exception $e) {
             Log::error('Manager: error uploading signed document', [
                 'contract_id' => $id,

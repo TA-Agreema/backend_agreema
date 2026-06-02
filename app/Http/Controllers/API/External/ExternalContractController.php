@@ -4,20 +4,23 @@ namespace App\Http\Controllers\API\External;
 
 use Exception;
 use App\Models\Contract;
-use App\Models\ContractSigner;
-use App\Models\ContractSignerReview;
-use App\Models\ContractSignerSignature;
-use App\Models\ExternalSignatureToken;
-use App\Models\Notification;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use App\Models\Notification;
+use Illuminate\Http\Request;
+use App\Models\ContractSigner;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
+use App\Mail\ContractActivatedMail;
+use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
+use App\Models\ContractSignerReview;
+use App\Services\ContractPdfService;
+use Illuminate\Support\Facades\Mail;
+use App\Models\ExternalSignatureToken;
+use App\Models\ContractSignerSignature;
+use Illuminate\Support\Facades\Storage;
+// use App\Mail\ExternalSigningRequestMail;
 use App\Http\Resources\Contract\ContractResource;
-use App\Mail\ExternalSigningRequestMail;
 
 class ExternalContractController extends Controller
 {
@@ -149,6 +152,9 @@ class ExternalContractController extends Controller
 
                     $contract->update(['status' => 'active']);
 
+                    // Kirim email notifikasi ke semua pihak
+                    $this->sendActivationEmails($contract);
+
                     Notification::create([
                         'user_id'     => $contract->created_by,
                         'contract_id' => $contract->id,
@@ -223,7 +229,6 @@ class ExternalContractController extends Controller
                     ? 'Kontrak berhasil disetujui.'
                     : 'Permintaan revisi berhasil dikirim.',
             ]);
-
         } catch (Exception $e) {
             Log::error('External review error', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
@@ -262,7 +267,7 @@ class ExternalContractController extends Controller
                     $imageData = str_replace('data:image/png;base64,', '', $request->signature_data);
                     $imageData = base64_decode($imageData);
                     $filename  = 'signatures/' . uniqid() . '.png';
-                    \Storage::disk('public')->put($filename, $imageData);
+                    Storage::disk('public')->put($filename, $imageData);
                     $signaturePath = $filename;
                 } else {
                     $signaturePath = $request->file('signature_file')
@@ -290,27 +295,64 @@ class ExternalContractController extends Controller
                     'review_status' => 'approved',
                 ]);
 
-                // ✅ TAMBAHAN: Cek apakah semua signer sudah TTD
+                // Cek apakah semua signer sudah TTD
                 $allSigned = $contract->signers()
                     ->whereDoesntHave('signatures')
                     ->doesntExist();
 
                 if ($allSigned) {
                     $contract->update(['status' => 'active']);
+
+                    // Kirim email notifikasi ke semua pihak
+                    $this->sendActivationEmails($contract);
                 }
             });
 
-            // ✅ TAMBAHAN: Ambil status terbaru setelah transaksi selesai
+            // Ambil status terbaru setelah transaksi selesai
             $contract->refresh();
 
             return response()->json([
                 'message'         => 'Tanda tangan berhasil disimpan.',
                 'contract_status' => $contract->status, // 'active' jika semua sudah TTD
             ]);
-
         } catch (Exception $e) {
             Log::error('External sign error', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Kirim email notifikasi ke semua pihak (internal + eksternal) saat kontrak aktif.
+     * Generate PDF terlebih dahulu dan simpan path-nya ke contract.
+     */
+    private function sendActivationEmails(Contract $contract): void
+    {
+        // Generate PDF dan simpan path ke contract
+        try {
+            $pdfService = app(ContractPdfService::class);
+            $pdfPath    = $pdfService->generateSignedPdf($contract);
+
+            $contract->update(['signed_document_path' => $pdfPath]);
+            $contract->signed_document_path = $pdfPath; // update in-memory juga
+        } catch (\Exception $e) {
+            Log::error('Gagal generate PDF kontrak', [
+                'contract_id' => $contract->id,
+                'error'       => $e->getMessage(),
+            ]);
+            // Tetap kirim email meski PDF gagal, tanpa attachment
+        }
+
+        $contract->loadMissing('signers.user');
+
+        foreach ($contract->signers as $signer) {
+            if ($signer->signer_type === 'internal' && $signer->user) {
+                Mail::to($signer->user->email)
+                    ->send(new ContractActivatedMail($contract, $signer->user->name));
+            } elseif ($signer->signer_type === 'external' && $signer->external_email) {
+                $name = $signer->signer_name ?? 'Pihak Eksternal';
+                Mail::to($signer->external_email)
+                    ->send(new ContractActivatedMail($contract, $name));
+            }
         }
     }
 
