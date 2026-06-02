@@ -16,6 +16,7 @@ class DashboardController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        /** @var \App\Models\User $user */
         $user = Auth::user();
 
         if ($user->hasRole('admin')) {
@@ -119,34 +120,38 @@ class DashboardController extends Controller
     private function managerDashboard($user): array
     {
         $totalSystemActive = Contract::where('status', 'active')->count();
-        $waitingApproval = Contract::where('status', 'review')
-            ->whereHas('signers', function ($q) use ($user) {
-                $q->where('user_id', $user->id);
-            })
+        $managedContracts = Contract::whereHas('signers', function ($q) use ($user) {
+            $q->where('user_id', $user->id);
+        });
+
+        $waitingApproval = (clone $managedContracts)
+            ->where('status', 'review')
             ->count();
 
         $currentMonth = Carbon::now()->month;
         $currentYear = Carbon::now()->year;
 
-        $approvedThisMonth = ContractStatusLog::where('changed_by', $user->id)
-            ->where('new_status', 'approved')
-            ->whereMonth('created_at', $currentMonth)
-            ->whereYear('created_at', $currentYear)
-            ->distinct('contract_id')
-            ->count('contract_id');
-
-        $rejectedOrRevision = ContractStatusLog::where('changed_by', $user->id)
-            ->whereIn('new_status', ['revision', 'rejected'])
-            ->whereMonth('created_at', $currentMonth)
-            ->whereYear('created_at', $currentYear)
-            ->distinct('contract_id')
-            ->count('contract_id');
-
-        $topWaiting = Contract::where('status', 'review')
-            ->with(['creator:id,name'])
-            ->whereHas('signers', function ($q) use ($user) {
-                $q->where('user_id', $user->id);
+        $approvedThisMonth = (clone $managedContracts)
+            ->whereHas('statusLogs', function ($q) use ($user, $currentMonth, $currentYear) {
+                $q->where('changed_by', $user->id)
+                    ->where('new_status', 'approved')
+                    ->whereMonth('created_at', $currentMonth)
+                    ->whereYear('created_at', $currentYear);
             })
+            ->count();
+
+        $rejectedOrRevision = (clone $managedContracts)
+            ->whereHas('statusLogs', function ($q) use ($user, $currentMonth, $currentYear) {
+                $q->where('changed_by', $user->id)
+                    ->whereIn('new_status', ['rejected'])
+                    ->whereMonth('created_at', $currentMonth)
+                    ->whereYear('created_at', $currentYear);
+            })
+            ->count();
+
+        $topWaiting = (clone $managedContracts)
+            ->where('status', 'review')
+            ->with(['creator:id,name'])
             ->latest()
             ->take(5)
             ->get(['id', 'title', 'contract_number', 'created_by', 'created_at']);
