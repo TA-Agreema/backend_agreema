@@ -45,9 +45,17 @@ class ContractResource extends JsonResource
                 : null,
             'addendums' => $this->addendums
                 ->map(function ($addendum) {
-                    $title = $addendum->description
-                        ? Str::limit($addendum->description, 60)
-                        : "Addendum {$addendum->addendum_number}";
+                    $title = $addendum->title
+                        ?: ($addendum->description
+                            ? Str::limit($addendum->description, 60)
+                            : "Addendum {$addendum->addendum_number}");
+
+                    $documentUrl = null;
+                    if (!empty($addendum->document_path)) {
+                        $documentUrl = Str::startsWith($addendum->document_path, ['http://', 'https://'])
+                            ? $addendum->document_path
+                            : asset('storage/' . ltrim($addendum->document_path, '/'));
+                    }
 
                     return [
                         'id' => $addendum->id,
@@ -56,20 +64,30 @@ class ContractResource extends JsonResource
                         'description' => $addendum->description ?? '-',
                         'created_at' => $addendum->created_at?->format('d-m-Y'),
                         'effective_date' => $addendum->effective_date?->format('d-m-Y'),
-                        'document_path' => $addendum->document_path,
+                        'document_path' => $documentUrl,
                     ];
                 })
                 ->values(),
             'terminations' => $this->termination ? [
                 [
                     'id' => $this->termination->id,
+                    'contract_id' => $this->termination->contract_id,
                     'termination_number' => $this->termination->termination_number,
                     'title' => $this->termination->title ?: "Terminasi {$this->termination->termination_number}",
                     'termination_reason' => $this->termination->termination_reason,
                     'termination_note' => $this->termination->termination_note ?? '-',
                     'created_at' => $this->termination->created_at?->format('d-m-Y'),
                     'effective_date' => $this->termination->effective_date?->format('d-m-Y'),
-                    'document_path' => $this->termination->termination_document_path,
+                    'termination_document_path' => $this->termination->termination_document_path
+                        ? (Str::startsWith($this->termination->termination_document_path, ['http://', 'https://'])
+                            ? $this->termination->termination_document_path
+                            : asset('storage/' . ltrim($this->termination->termination_document_path, '/')))
+                        : null,
+                    'document_path' => $this->termination->termination_document_path
+                        ? (Str::startsWith($this->termination->termination_document_path, ['http://', 'https://'])
+                            ? $this->termination->termination_document_path
+                            : asset('storage/' . ltrim($this->termination->termination_document_path, '/')))
+                        : null,
                 ]
             ] : [],
             'field_values' => $this->latestVersion?->fieldValues
@@ -119,6 +137,7 @@ class ContractResource extends JsonResource
                     ];
                 });
             }),
+
             'status_logs' => $this->statusLogs->map(fn($log) => [
                 'id'         => $log->id,
                 'old_status' => $log->old_status,
@@ -126,6 +145,19 @@ class ContractResource extends JsonResource
                 'changed_by' => $log->changedBy?->name ?? 'System',
                 'created_at' => $log->created_at?->format('d M Y, H:i'),
             ]),
+
+            'versions' => $this->whenLoaded('versions', function () {
+                return $this->versions->map(function ($v) {
+                    return [
+                        'id' => $v->id,
+                        'version_number' => $v->version_number,
+                        'content' => $v->content,
+                        'created_at' => $v->created_at?->format('d-m-Y H:i:s'),
+                        'created_by' => $v->creator?->name ?? 'System',
+                    ];
+                });
+            }),
+
         ];
     }
 
