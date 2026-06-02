@@ -14,6 +14,7 @@ class Contract extends Model
         'contract_number',
         'external_contract_number',
         'title',
+        'paper_size',
         'start_date',
         'end_date',
         'status',

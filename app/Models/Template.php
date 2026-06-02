@@ -11,6 +11,7 @@ class Template extends Model
     protected $fillable = [
         'name',
         'content',
+        'paper_size',
         'is_active',
         'category_id',
         'created_by',
@@ -19,17 +20,14 @@ class Template extends Model
     protected $casts = [
         'is_active' => 'boolean',
     ];
-
     public function category(): BelongsTo
     {
         return $this->belongsTo(ContractCategory::class, 'category_id');
     }
-
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
-
     public function contracts(): HasMany
     {
         return $this->hasMany(Contract::class, 'template_id');

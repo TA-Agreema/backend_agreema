@@ -19,6 +19,7 @@ class UpdateContractRequest extends FormRequest
             'contract_number' => "sometimes|required|string|unique:contracts,contract_number,{$id}",
             'external_contract_number' => "nullable|string|unique:contracts,external_contract_number,{$id}",
             'title' => 'sometimes|required|string',
+            'paper_size' => 'nullable|in:a4,f4',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date',
             'status' => 'nullable|string',
@@ -32,7 +33,7 @@ class UpdateContractRequest extends FormRequest
             'field_values.*.value' => 'nullable|string',
             'signers' => 'nullable|array',
             'signers.*.type' => 'required|in:internal,external',
-            'signers.*.name' => 'required|string',
+            'signers.*.name' => 'nullable|string',
             'signers.*.title' => 'nullable|string',
             'signers.*.email' => 'nullable|email',
         ];

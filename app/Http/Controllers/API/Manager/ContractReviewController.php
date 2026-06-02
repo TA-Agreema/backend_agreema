@@ -461,7 +461,7 @@ class ContractReviewController extends Controller
             ])->render();
 
             $pdf = Pdf::loadHTML($html)
-                ->setPaper('a4', 'portrait')
+                ->setPaper(($contract->paper_size ?? 'f4') === 'f4' ? [0, 0, 609.45, 935.43] : 'a4', 'portrait')
                 ->setOptions([
                     'defaultFont'     => 'sans-serif',
                     'isRemoteEnabled' => false,
