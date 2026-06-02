@@ -51,7 +51,7 @@ class Contract extends Model
 
     public function latestVersion(): HasOne
     {
-        return $this->hasOne(ContractVersion::class)->latestOfMany('version_number');
+        return $this->hasOne(ContractVersion::class)->latestOfMany('id');
     }
 
     public function signers(): HasMany
