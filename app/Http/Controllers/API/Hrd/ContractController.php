@@ -40,11 +40,11 @@ class ContractController extends Controller
 
             // filter berdasarkan parameter 'archive'
             if ($request->boolean('archive')) {
-                // Halaman arsip: hanya tampilkan rejected & terminated
-                $query->whereIn('status', ['rejected', 'terminated']);
+                // Halaman arsip: hanya tampilkan rejected, terminated, & expired
+                $query->whereIn('status', ['rejected', 'terminated', 'expired']);
             } else {
-                // Daftar kontrak: sembunyikan rejected & terminated
-                $query->whereNotIn('status', ['rejected', 'terminated']);
+                // Daftar kontrak: sembunyikan rejected, terminated, & expired
+                $query->whereNotIn('status', ['rejected', 'terminated', 'expired']);
             }
 
             $validated = $request->validate([
