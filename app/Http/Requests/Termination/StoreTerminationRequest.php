@@ -22,12 +22,12 @@ class StoreTerminationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'title'              => 'required|string|max:255',
+            'title' => 'required|string|max:255',
             'termination_number' => 'required|string|max:100',
             'termination_reason' => 'required|string|max:5000',
-            'termination_note'   => 'nullable|string|max:5000',
-            'document'           => 'nullable|file|mimes:pdf|max:10240',
-            'effective_date'     => 'required|date',
+            'termination_note' => 'nullable|string|max:5000',
+            'document' => 'nullable|file|mimes:pdf|max:10240',
+            'effective_date' => 'required|date|after_or_equal:today',
         ];
     }
 }

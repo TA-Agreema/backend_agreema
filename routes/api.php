@@ -89,6 +89,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Manager Review Routes
     Route::prefix('manager/contracts')->middleware('permission:read.contracts')->group(function () {
         Route::get('/', [ContractReviewController::class, 'index']);
+        Route::get('/archive', [ContractReviewController::class, 'archive']); // ← arsip per-manager
         Route::get('/{id}', [ContractReviewController::class, 'show']);
         Route::post('/{id}/review', [ContractReviewController::class, 'review']);
         Route::post('/{id}/sign', [ContractReviewController::class, 'sign']);

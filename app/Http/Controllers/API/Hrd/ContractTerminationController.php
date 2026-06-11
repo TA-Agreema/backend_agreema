@@ -62,12 +62,19 @@ class ContractTerminationController extends Controller
                 $documentPath = $request->file('document')->store('terminations', 'public');
             }
 
-            $termination = DB::transaction(function () use ($contract, $validated, $documentPath) {
-                // Update status kontrak menjadi terminated
-                $contract->update([
-                    'status' => 'terminated',
+            $effectiveDate = \Carbon\Carbon::parse($validated['effective_date'])->startOfDay();
+            $today = \Carbon\Carbon::today();
+
+            $termination = DB::transaction(function () use ($contract, $validated, $documentPath, $effectiveDate, $today) {
+                $updateData = [
                     'end_date' => $validated['effective_date'],
-                ]);
+                ];
+
+                if ($effectiveDate->lessThanOrEqualTo($today)) {
+                    $updateData['status'] = 'terminated';
+                }
+
+                $contract->update($updateData);
 
                 return ContractTermination::create([
                     'contract_id'               => $contract->id,
@@ -80,8 +87,12 @@ class ContractTerminationController extends Controller
                 ]);
             });
 
+            $message = $effectiveDate->lessThanOrEqualTo($today)
+                ? 'Terminasi berhasil dibuat dan kontrak telah dihentikan.'
+                : 'Terminasi berhasil dibuat. Kontrak akan dihentikan pada tanggal efektif.';
+
             return response()->json([
-                'message' => 'Terminasi berhasil dibuat dan kontrak telah dihentikan.',
+                'message' => $message,
                 'data'    => new TerminationResource($termination),
             ], 201);
         } catch (ModelNotFoundException) {
