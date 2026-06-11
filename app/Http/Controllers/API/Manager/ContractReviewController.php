@@ -43,7 +43,7 @@ class ContractReviewController extends Controller
             $contracts = Contract::with([
                 'template.category:id,name',
                 'creator:id,name',
-                'latestVersion',
+                'latestVersion.fieldValues.fieldDefinition',
                 'signers.user:id,name,email,job_title',
                 'addendums',
             ])
@@ -83,6 +83,7 @@ class ContractReviewController extends Controller
                 'signers.reviews',
                 'parties.party.individualDetail:id,party_id,full_name',
                 'parties.party.companyDetail:id,party_id,company_name',
+                'latestVersion.fieldValues.fieldDefinition',
             ])
                 ->whereIn('id', $contractIds)
                 ->whereIn('status', ['rejected', 'terminated', 'expired'])
