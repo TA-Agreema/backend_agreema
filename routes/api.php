@@ -69,6 +69,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/generate-number', [ContractController::class, 'generateNumber'])->middleware('permission:create.contract');
         Route::get('/', [ContractController::class, 'index'])->middleware('permission:read.contracts');
         Route::post('/', [ContractController::class, 'store'])->middleware('permission:create.contract');
+        Route::get('/{id}/download', [ContractController::class, 'download'])->middleware('permission:read.contracts');
         Route::get('/{id}', [ContractController::class, 'show'])->middleware('permission:read.contracts');
         Route::patch('/{id}', [ContractController::class, 'update'])->middleware('permission:update.contract');
         Route::delete('/{id}', [ContractController::class, 'destroy'])->middleware('permission:delete.contract');
@@ -115,4 +116,3 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}', [FieldDefinitionController::class, 'destroy']);
     });
 });
-
