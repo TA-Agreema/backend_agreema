@@ -10,6 +10,7 @@ use DOMXPath;
 class PdfContentNormalizer
 {
     private const DEFAULT_IMAGE_WIDTH = '70%';
+    private const WATERMARK_SELECTOR = '//*[@data-document-watermark]';
 
     public static function normalize(string $html): string
     {
@@ -21,9 +22,39 @@ class PdfContentNormalizer
         $xpath = new DOMXPath($document);
 
         self::preserveEmptyParagraphs($xpath);
+        self::removeWatermarkMetadata($xpath);
         self::normalizeImages($document, $xpath);
 
         return self::getBodyContent($document);
+    }
+
+    public static function extractWatermark(string $html): ?array
+    {
+        if (trim($html) === '') {
+            return null;
+        }
+
+        $document = self::createDocument($html);
+        $xpath = new DOMXPath($document);
+        $marker = $xpath->query(self::WATERMARK_SELECTOR)->item(0);
+
+        if (!$marker instanceof DOMElement) {
+            return null;
+        }
+
+        $enabled = $marker->getAttribute('data-watermark-enabled') === 'true';
+        $src = trim($marker->getAttribute('data-watermark-src'));
+
+        if (!$enabled || $src === '') {
+            return null;
+        }
+
+        return [
+            'src' => $src,
+            'opacity' => self::clampFloat($marker->getAttribute('data-watermark-opacity'), 0, 1, 0.12),
+            'size' => self::clampFloat($marker->getAttribute('data-watermark-size'), 20, 90, 45),
+            'rotation' => self::clampFloat($marker->getAttribute('data-watermark-rotation'), -45, 45, 0),
+        ];
     }
 
     private static function createDocument(string $html): DOMDocument
@@ -71,6 +102,8 @@ class PdfContentNormalizer
 
     private static function wrapImageForPdf(DOMDocument $document, DOMElement $image): void
     {
+        self::normalizeImageAncestors($image);
+
         $parentStyle = $image->parentNode instanceof DOMElement
             ? $image->parentNode->getAttribute('style')
             : '';
@@ -109,6 +142,41 @@ class PdfContentNormalizer
         $container->appendChild($image);
     }
 
+    private static function removeWatermarkMetadata(DOMXPath $xpath): void
+    {
+        $markers = [];
+
+        foreach ($xpath->query(self::WATERMARK_SELECTOR) as $marker) {
+            if ($marker instanceof DOMElement) {
+                $markers[] = $marker;
+            }
+        }
+
+        foreach ($markers as $marker) {
+            $marker->parentNode?->removeChild($marker);
+        }
+    }
+
+    private static function normalizeImageAncestors(DOMElement $image): void
+    {
+        $parent = $image->parentNode;
+
+        while ($parent instanceof DOMElement) {
+            if ($parent->tagName === 'figure') {
+                $parent->setAttribute(
+                    'style',
+                    self::appendStyle(
+                        $parent->getAttribute('style'),
+                        'margin:0; padding:0; width:100%; max-width:100%;'
+                    )
+                );
+                return;
+            }
+
+            $parent = $parent->parentNode;
+        }
+    }
+
     /**
      * Editor menyimpan sebagian layout gambar sebagai inline style. Di sini style
      * tersebut diubah menjadi array agar mudah dibaca tanpa memproses HTML mentah.
@@ -136,6 +204,17 @@ class PdfContentNormalizer
         return $styles;
     }
 
+    private static function appendStyle(string $existingStyle, string $styleToAppend): string
+    {
+        $existingStyle = trim($existingStyle);
+
+        if ($existingStyle === '') {
+            return $styleToAppend;
+        }
+
+        return rtrim($existingStyle, ';') . '; ' . $styleToAppend;
+    }
+
     private static function resolveImageWidth(array $style, DOMElement $image): string
     {
         if (!empty($style['width'])) {
@@ -154,6 +233,7 @@ class PdfContentNormalizer
     {
         $float = strtolower($style['float'] ?? '');
         $textAlign = strtolower($style['text-align'] ?? '');
+        $justifyContent = self::normalizeCssValue($style['justify-content'] ?? '');
         $margin = self::normalizeCssValue($style['margin'] ?? '');
         $marginLeft = self::normalizeCssValue($style['margin-left'] ?? '');
         $marginRight = self::normalizeCssValue($style['margin-right'] ?? '');
@@ -161,6 +241,7 @@ class PdfContentNormalizer
         if (
             $float === 'right'
             || $textAlign === 'right'
+            || self::isRightAlignedJustifyContent($justifyContent)
             || self::isRightAlignedMargin($margin, $marginLeft, $marginRight)
         ) {
             return '0 0 0 auto';
@@ -169,6 +250,7 @@ class PdfContentNormalizer
         if (
             $float === 'left'
             || $textAlign === 'left'
+            || self::isLeftAlignedJustifyContent($justifyContent)
             || self::isLeftAlignedMargin($margin, $marginLeft, $marginRight)
         ) {
             return '0 auto 0 0';
@@ -176,6 +258,17 @@ class PdfContentNormalizer
 
         return '0 auto';
     }
+
+    private static function isRightAlignedJustifyContent(string $justifyContent): bool
+    {
+        return in_array($justifyContent, ['right', 'end', 'flex-end'], true);
+    }
+
+    private static function isLeftAlignedJustifyContent(string $justifyContent): bool
+    {
+        return in_array($justifyContent, ['left', 'start', 'flex-start'], true);
+    }
+
 
     private static function isRightAlignedMargin(string $margin, string $marginLeft, string $marginRight): bool
     {
@@ -221,6 +314,17 @@ class PdfContentNormalizer
         return in_array($value, ['0', '0px', '0em', '0rem', '0%'], true);
     }
 
+    private static function clampFloat(string $value, float $min, float $max, float $fallback): float
+    {
+        if (trim($value) === '' || !is_numeric($value)) {
+            return $fallback;
+        }
+
+        $number = (float) $value;
+
+        return max($min, min($max, $number));
+    }
+
     private static function hasElementChild(DOMElement $element): bool
     {
         foreach ($element->childNodes as $child) {
@@ -262,5 +366,8 @@ class PdfContentNormalizer
         return $html;
     }
 }
+
+
+
 
 
