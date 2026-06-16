@@ -18,6 +18,7 @@ class TemplateController extends Controller
     {
         try {
             $templates = Template::query()
+                ->where('name', 'not like', '_preview_temp_%')
                 ->with(['category:id,name', 'creator:id,name'])
                 ->orderByDesc('created_at')
                 ->get()
@@ -222,7 +223,11 @@ class TemplateController extends Controller
                     'isHtml5ParserEnabled' => true,
                 ]);
 
-            $filename = ($template->name ?: 'template-' . $id) . '.pdf';
+            $filename = $template->name;
+            if (str_starts_with($filename, '_preview_temp_')) {
+                $filename = 'template-kontrak';
+            }
+            $filename = ($filename ?: 'template-' . $id) . '.pdf';
             $filename = str_replace(['/','\\'], '-', $filename);
 
             return $pdf->download($filename);

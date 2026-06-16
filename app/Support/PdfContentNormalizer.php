@@ -11,6 +11,8 @@ class PdfContentNormalizer
 {
     private const DEFAULT_IMAGE_WIDTH = '70%';
     private const WATERMARK_SELECTOR = '//*[@data-document-watermark]';
+    private const MARGIN_SELECTOR = '//*[@data-document-margin]';
+    private const DEFAULT_MARGIN = '2.54cm';
 
     public static function normalize(string $html): string
     {
@@ -23,6 +25,7 @@ class PdfContentNormalizer
 
         self::preserveEmptyParagraphs($xpath);
         self::removeWatermarkMetadata($xpath);
+        self::removeMarginMetadata($xpath);
         self::normalizeImages($document, $xpath);
 
         return self::getBodyContent($document);
@@ -55,6 +58,53 @@ class PdfContentNormalizer
             'size' => self::clampFloat($marker->getAttribute('data-watermark-size'), 20, 90, 45),
             'rotation' => self::clampFloat($marker->getAttribute('data-watermark-rotation'), -45, 45, 0),
         ];
+    }
+
+    /**
+     * Extract page margin settings that the frontend embeds as a hidden marker div.
+     * Returns an array with keys: top, bottom, left, right.
+     */
+    public static function extractMargins(string $html): array
+    {
+        $default = [
+            'top'    => self::DEFAULT_MARGIN,
+            'bottom' => self::DEFAULT_MARGIN,
+            'left'   => self::DEFAULT_MARGIN,
+            'right'  => self::DEFAULT_MARGIN,
+        ];
+
+        if (trim($html) === '') {
+            return $default;
+        }
+
+        $document = self::createDocument($html);
+        $xpath    = new DOMXPath($document);
+        $marker   = $xpath->query(self::MARGIN_SELECTOR)->item(0);
+
+        if (!$marker instanceof DOMElement) {
+            return $default;
+        }
+
+        return [
+            'top'    => self::sanitizeMarginValue($marker->getAttribute('data-margin-top'),    $default['top']),
+            'bottom' => self::sanitizeMarginValue($marker->getAttribute('data-margin-bottom'), $default['bottom']),
+            'left'   => self::sanitizeMarginValue($marker->getAttribute('data-margin-left'),   $default['left']),
+            'right'  => self::sanitizeMarginValue($marker->getAttribute('data-margin-right'),  $default['right']),
+        ];
+    }
+
+    /**
+     * Validate and sanitize a CSS length value coming from the frontend.
+     * Only allows values ending in cm, mm, in, pt, px with a numeric prefix.
+     */
+    private static function sanitizeMarginValue(string $value, string $fallback): string
+    {
+        $value = trim($value);
+        // Accept values like "2.54cm", "25.4mm", "72pt", "1in", "96px"
+        if (preg_match('/^\d+(\.\d+)?(cm|mm|in|pt|px)$/', $value)) {
+            return $value;
+        }
+        return $fallback;
     }
 
     private static function createDocument(string $html): DOMDocument
@@ -147,6 +197,21 @@ class PdfContentNormalizer
         $markers = [];
 
         foreach ($xpath->query(self::WATERMARK_SELECTOR) as $marker) {
+            if ($marker instanceof DOMElement) {
+                $markers[] = $marker;
+            }
+        }
+
+        foreach ($markers as $marker) {
+            $marker->parentNode?->removeChild($marker);
+        }
+    }
+
+    private static function removeMarginMetadata(DOMXPath $xpath): void
+    {
+        $markers = [];
+
+        foreach ($xpath->query(self::MARGIN_SELECTOR) as $marker) {
             if ($marker instanceof DOMElement) {
                 $markers[] = $marker;
             }

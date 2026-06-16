@@ -69,7 +69,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/generate-number', [ContractController::class, 'generateNumber'])->middleware('permission:create.contract');
         Route::get('/', [ContractController::class, 'index'])->middleware('permission:read.contracts');
         Route::post('/', [ContractController::class, 'store'])->middleware('permission:create.contract');
-        Route::get('/{id}/download', [ContractController::class, 'download'])->middleware('permission:read.contracts');
+        Route::get('/{id}/download', [ContractController::class, 'download'])->middleware('permission:download.contract');
         Route::get('/{id}', [ContractController::class, 'show'])->middleware('permission:read.contracts');
         Route::patch('/{id}', [ContractController::class, 'update'])->middleware('permission:update.contract');
         Route::delete('/{id}', [ContractController::class, 'destroy'])->middleware('permission:delete.contract');
@@ -94,14 +94,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [ContractReviewController::class, 'show']);
         Route::post('/{id}/review', [ContractReviewController::class, 'review']);
         Route::post('/{id}/sign', [ContractReviewController::class, 'sign']);
-        Route::get('/{id}/download', [ContractReviewController::class, 'download']);
+        Route::get('/{id}/download', [ContractReviewController::class, 'download'])->middleware('permission:download.contract');
         Route::post('/{id}/upload-signed', [ContractReviewController::class, 'uploadSignedDocument']);
     });
 
     // Templates
     Route::prefix('templates')->group(function () {
         Route::get('/', [TemplateController::class, 'index'])->middleware('permission:read.template');
-        Route::get('/{id}/download', [TemplateController::class, 'download'])->middleware('permission:read.template');
+        Route::get('/{id}/download', [TemplateController::class, 'download'])->middleware('permission:download.template');
         Route::get('/{id}', [TemplateController::class, 'show'])->middleware('permission:read.template');
         Route::post('/', [TemplateController::class, 'store'])->middleware('permission:create.template');
         Route::patch('/{id}', [TemplateController::class, 'update'])->middleware('permission:update.template');

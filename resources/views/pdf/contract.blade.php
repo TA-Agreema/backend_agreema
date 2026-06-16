@@ -1,5 +1,6 @@
 @php
     $watermark = \App\Support\PdfContentNormalizer::extractWatermark($content ?? '');
+    $margins = \App\Support\PdfContentNormalizer::extractMargins($content ?? '');
     $renderedContent = \App\Support\PdfContentNormalizer::normalize($content ?? '');
 @endphp
 <!DOCTYPE html>
@@ -14,7 +15,10 @@
 
         @page {
             size: {{ ($contract->paper_size ?? 'a4') === 'f4' ? '21.5cm 33cm' : 'A4' }};
-            margin: 2.54cm;
+            margin-top: {{ $margins['top'] }};
+            margin-bottom: {{ $margins['bottom'] }};
+            margin-left: {{ $margins['left'] }};
+            margin-right: {{ $margins['right'] }};
         }
 
         body {
