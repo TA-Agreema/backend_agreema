@@ -41,7 +41,7 @@ class ContractResource extends JsonResource
             'end_date' => $this->end_date?->format('d-m-Y'),
             'created_by' => $this->creator?->name ?? '-',
             'sign_method' => $lastInternalSignature?->signature_type ?? null,
-            'signed_document_url' => $this->signed_document_path
+            'signed_document_url' => ($this->signed_document_path && $lastInternalSignature?->signature_type === 'upload')
                 ? asset('storage/' . $this->signed_document_path)
                 : null,
             'addendums' => $this->addendums

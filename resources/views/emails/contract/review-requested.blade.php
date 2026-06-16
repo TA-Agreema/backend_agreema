@@ -3,7 +3,7 @@
 
 Yth. Bapak/Ibu,
 
-Sebuah kontrak baru telah disubmit oleh HRD dan membutuhkan review Anda sebelum diteruskan ke pihak eksternal.
+Sebuah kontrak baru telah disubmit oleh HRD dan membutuhkan review Anda sebelum diteruskan ke pihak kedua.
 
 **Nomor Kontrak:** {{ $contract->contract_number }}
 **Judul:** {{ $contract->title }}

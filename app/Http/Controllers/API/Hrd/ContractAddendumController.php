@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API\Hrd;
 use Exception;
 use App\Models\Contract;
 use App\Models\ContractAddendum;
+use App\Models\Notification;
 use App\Http\Requests\Addendum\StoreAddendumRequest;
 use App\Http\Resources\Addendum\AddendumResource;
 use Illuminate\Http\Request;
@@ -66,7 +67,7 @@ class ContractAddendumController extends Controller
             }
 
             $addendum = DB::transaction(function () use ($contract, $validated, $documentPath) {
-                return ContractAddendum::create([
+                $addendum = ContractAddendum::create([
                     'contract_id'     => $contract->id,
                     'addendum_number' => $validated['addendum_number'],
                     'title'           => $validated['title'],
@@ -74,6 +75,31 @@ class ContractAddendumController extends Controller
                     'document_path'   => $documentPath,
                     'effective_date'  => $validated['effective_date'] ?? null,
                 ]);
+
+                // Notifikasi ke HRD (pembuat kontrak)
+                Notification::create([
+                    'user_id'     => $contract->created_by,
+                    'contract_id' => $contract->id,
+                    'type'        => 'contract_addendum',
+                    'message'     => "Addendum {$addendum->addendum_number} berhasil ditambahkan pada {$contract->title}.",
+                    'is_read'     => false,
+                ]);
+
+                // Notifikasi ke manager (internal signer)
+                $contract->loadMissing('signers.user');
+                foreach ($contract->signers as $signer) {
+                    if ($signer->signer_type === 'internal' && $signer->user_id && $signer->user_id !== $contract->created_by) {
+                        Notification::create([
+                            'user_id'     => $signer->user_id,
+                            'contract_id' => $contract->id,
+                            'type'        => 'contract_addendum',
+                            'message'     => "Addendum {$addendum->title} telah ditambahkan pada {$contract->title}.",
+                            'is_read'     => false,
+                        ]);
+                    }
+                }
+
+                return $addendum;
             });
 
             return response()->json([

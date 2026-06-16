@@ -48,7 +48,7 @@ class ContractReviewController extends Controller
                 'addendums',
             ])
                 ->whereIn('id', $contractIds)
-                ->whereIn('status', ['review', 'revision', 'approved', 'active', 'rejected'])
+                ->whereIn('status', ['review', 'revision', 'approved','signed', 'active', 'rejected'])
                 ->orderByDesc('updated_at')
                 ->get();
 
@@ -150,7 +150,7 @@ class ContractReviewController extends Controller
         }
     }
 
-    /**
+     /**
      * POST /api/manager/contracts/{id}/review
      * Manager approve atau minta revisi.
      */
@@ -186,7 +186,7 @@ class ContractReviewController extends Controller
             $iteration = ContractSignerReview::where('contract_signer_id', $signer->id)->max('iteration') ?? 0;
             $iteration++;
 
-            DB::transaction(function () use ($contract, $signer, $latestVersion, $validated, $iteration) {
+            DB::transaction(function () use ($contract, $signer, $latestVersion, $validated, $iteration, $user) {
                 // Catat review ke tabel contract_signer_reviews
                 ContractSignerReview::create([
                     'contract_signer_id' => $signer->id,
@@ -198,19 +198,31 @@ class ContractReviewController extends Controller
                 ]);
 
                 if ($validated['status'] === 'approved') {
-                    // Ubah status kontrak → approved
-                    $contract->update(['status' => 'approved']);
+                    $hasExternal = $contract->signers->where('signer_type', 'external')->isNotEmpty();
+                    $allInternalSigners = $contract->signers->where('signer_type', 'internal');
 
-                    // Kirim email + token ke external signers
-                    $this->dispatchExternalSigningEmails($contract, $iteration + 1);
+                    // Cek apakah semua internal signer sudah approve di iterasi ini
+                    $approvedSignerIds = ContractSignerReview::whereIn('contract_signer_id', $allInternalSigners->pluck('id'))
+                        ->where('iteration', $iteration)
+                        ->where('status', 'approved')
+                        ->pluck('contract_signer_id');
+
+                    $allInternalApproved = $allInternalSigners->count() > 0
+                        && $allInternalSigners->count() === $approvedSignerIds->count();
+
+                    if ($allInternalApproved) {
+                        if ($hasExternal) {
+                            // Semua internal approve + ada external → kirim ke eksternal
+                            $contract->update(['status' => 'approved']);
+                            $this->dispatchExternalSigningEmails($contract, $iteration + 1);
 
                     // Notifikasi ke HRD (pembuat kontrak)
                     Notification::create([
-                        'user_id' => $contract->created_by,
+                        'user_id'     => $contract->created_by,
                         'contract_id' => $contract->id,
-                        'type' => 'manager_approved',
-                        'message' => "Manager telah menyetujui kontrak {$contract->contract_number}. Email dikirim ke pihak eksternal.",
-                        'is_read' => false,
+                        'type'        => 'manager_approved',
+                        'message'     => "Manager telah menyetujui kontrak {$contract->contract_number}. Email dikirim ke pihak eksternal.",
+                        'is_read'     => false,
                     ]);
                 } elseif ($validated['status'] === 'rejected') {
                     // Ubah status kontrak → rejected
@@ -223,9 +235,9 @@ class ContractReviewController extends Controller
                     Notification::create([
                         'user_id' => $contract->created_by,
                         'contract_id' => $contract->id,
-                        'type' => 'manager_rejected',
-                        'message' => "Manager telah menolak kontrak {$contract->contract_number}. Alasan: {$validated['notes']}",
-                        'is_read' => false,
+                        'type'        => 'manager_rejected',
+                        'message'     => "Manager telah menolak kontrak {$contract->contract_number}. Alasan: {$validated['notes']}",
+                        'is_read'     => false,
                     ]);
                 } else {
                     // Ubah status kontrak → revision (kembali ke HRD)
@@ -235,18 +247,26 @@ class ContractReviewController extends Controller
                     Notification::create([
                         'user_id' => $contract->created_by,
                         'contract_id' => $contract->id,
-                        'type' => 'manager_revision_requested',
-                        'message' => "Manager meminta revisi untuk kontrak {$contract->contract_number}: {$validated['notes']}",
-                        'is_read' => false,
+                        'type'        => 'manager_revision_requested',
+                        'message'     => "Manager meminta revisi untuk kontrak {$contract->contract_number}: {$validated['notes']}",
+                        'is_read'     => false,
                     ]);
                 }
             });
 
             $responseMessage = '';
             if ($validated['status'] === 'approved') {
-                $responseMessage = 'Kontrak disetujui. Email dikirim ke pihak eksternal.';
+                $fresh = $contract->fresh(['signers']);
+                $hasExternal = $fresh->signers->where('signer_type', 'external')->isNotEmpty();
+                if ($fresh->status === 'approved' && $hasExternal) {
+                    $responseMessage = 'Kontrak disetujui dan akan dikirim ke pihak kedua.';
+                } elseif ($fresh->status === 'approved' && !$hasExternal) {
+                    $responseMessage = 'Kontrak disetujui. Silakan lanjutkan penandatanganan.';
+                } else {
+                    $responseMessage = 'Persetujuan Anda berhasil disimpan. Menunggu persetujuan pihak internal lainnya.';
+                }
             } elseif ($validated['status'] === 'rejected') {
-                $responseMessage = 'Kontrak ditolak. Pihak eksternal telah diberitahu.';
+                $responseMessage = 'Kontrak ditolak dan pihak kedua telah diberitahu.';
             } else {
                 $responseMessage = 'Permintaan revisi berhasil dikirim ke HRD.';
             }
@@ -262,6 +282,22 @@ class ContractReviewController extends Controller
         } catch (Exception $e) {
             Log::error('Manager review error', ['contract_id' => $id, 'error' => $e->getMessage()]);
             return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Pastikan user adalah internal signer kontrak. Return signer model.
+     *
+     * @throws \Illuminate\Auth\Access\AuthorizationException
+     */
+    /**
+     * Langsung aktifkan kontrak jika start_date sudah tiba atau hari ini.
+     */
+    private function activateIfReady(Contract $contract): void
+    {
+        $contract->refresh();
+        if ($contract->start_date && $contract->start_date->lte(\Carbon\Carbon::today())) {
+            $contract->update(['status' => 'active']);
         }
     }
 
@@ -381,6 +417,24 @@ class ContractReviewController extends Controller
                 ], 403);
             }
 
+            // Cek urutan TTD berdasarkan sequence
+            // Signer hanya boleh TTD jika semua signer dengan sequence lebih kecil sudah approve
+            $allInternalSigners = $contract->signers->where('signer_type', 'internal')->sortBy('sequence');
+            foreach ($allInternalSigners as $prevSigner) {
+                if ($prevSigner->sequence >= $signer->sequence) break;
+ 
+                // Ambil iterasi review tertinggi signer sebelumnya
+                $prevApproved = ContractSignerReview::where('contract_signer_id', $prevSigner->id)
+                    ->where('status', 'approved')
+                    ->exists();
+ 
+                if (!$prevApproved) {
+                    return response()->json([
+                        'message' => 'Anda belum dapat menandatangani. Penandatangan sebelumnya belum menyetujui kontrak.',
+                    ], 422);
+                }
+            }
+
             $latestVersion = $contract->latestVersion;
             if (!$latestVersion) {
                 return response()->json([
@@ -388,15 +442,17 @@ class ContractReviewController extends Controller
                 ], 422);
             }
 
+
             // Simpan file tanda tangan
             $signaturePath = null;
 
             if ($request->signature_type === 'canvas') {
                 $imageData = preg_replace('/^data:image\/\w+;base64,/', '', $request->signature_data);
+
                 $imageData = str_replace(' ', '+', $imageData);
                 $decoded = base64_decode($imageData);
 
-                $filename = 'signatures/' . $id . '_' . $user->id . '_' . time() . '.png';
+                $filename      = 'signatures/' . $id . '_' . $user->id . '_' . time() . '.png';
                 Storage::disk('public')->put($filename, $decoded);
                 $signaturePath = $filename;
             } else {
@@ -427,26 +483,73 @@ class ContractReviewController extends Controller
                 ->where('signer_type', 'internal')
                 ->pluck('id');
 
+            // Ambil iterasi tertinggi yang valid (positif) dari semua internal signer
+            $currentIteration = ContractSignerSignature::whereIn('contract_signer_id', $allInternalSigners)
+                ->where('iteration', '>', 0)
+                ->max('iteration') ?? 0;
+
             $signedSignerIds = ContractSignerSignature::whereIn('contract_signer_id', $allInternalSigners)
+                ->where('iteration', $currentIteration)
+                ->where('iteration', '>', 0)
                 ->distinct('contract_signer_id')
                 ->pluck('contract_signer_id');
 
-            $allSigned = $allInternalSigners->count() > 0
+            $allSigned = $currentIteration > 0
+                && $allInternalSigners->count() > 0
                 && $allInternalSigners->count() === $signedSignerIds->count();
 
             if ($allSigned) {
-                $contract->update(['status' => 'approved']);
                 $contract->load('signers');
-                $this->dispatchExternalSigningEmails($contract, $iteration + 1);
+                $hasExternalSigner = $contract->signers->where('signer_type', 'external')->isNotEmpty();
+
+                if ($hasExternalSigner) {
+                    // Ada pihak eksternal — kirim ke eksternal untuk TTD
+                    $contract->update(['status' => 'approved']);
+                    $this->dispatchExternalSigningEmails($contract, $iteration + 1);
 
                 Notification::create([
                     'user_id' => $contract->created_by,
                     'contract_id' => $contract->id,
-                    'type' => 'all_internal_signed',
-                    'message' => "Semua penandatangan internal telah menandatangani kontrak {$contract->contract_number}. Email dikirim ke pihak eksternal.",
-                    'is_read' => false,
+                    'type'        => 'all_internal_signed',
+                    'message'     => "Semua penandatangan internal telah menandatangani kontrak {$contract->contract_number}. Email dikirim ke pihak eksternal.",
+                    'is_read'     => false,
                 ]);
+            } else {
+                    // Tidak ada pihak eksternal — langsung signed/active ketika start_date tiba
+                    $contract->update(['status' => 'signed']);
+                    $this->activateIfReady($contract);
+
+                    $isNowActive = $contract->fresh()->status === 'active';
+                    $startDate = $contract->start_date
+                        ? $contract->start_date->locale('id')->isoFormat('D MMMM YYYY')
+                        : null;
+
+                    $messageHrd = $isNowActive
+                        ? "{$contract->title} telah ditandatangani semua pihak internal dan kini aktif."
+                        : "{$contract->title} telah ditandatangani semua pihak internal. Kontrak akan aktif pada {$startDate}.";
+
+                    $messageManager = $isNowActive
+                        ? "Anda telah menandatangani {$contract->title}. Kontrak kini aktif."
+                        : "Anda telah menandatangani {$contract->title}. Kontrak akan aktif pada {$startDate}.";
+
+                    Notification::create([
+                        'user_id'     => $contract->created_by,
+                        'contract_id' => $contract->id,
+                        'type'        => $isNowActive ? 'contract_activated' : 'all_reviewers_signed',
+                        'message'     => $messageHrd,
+                        'is_read'     => false,
+                    ]);
+
+                    Notification::create([
+                        'user_id'     => $user->id,
+                        'contract_id' => $contract->id,
+                        'type'        => $isNowActive ? 'contract_activated' : 'manager_approved',
+                        'message'     => $messageManager,
+                        'is_read'     => false,
+                    ]);
+                }
             }
+
             // Reload signers sebelum dispatch
             $contract->load('signers');
 
@@ -496,7 +599,7 @@ class ContractReviewController extends Controller
             if ($contract->signed_document_path) {
                 $filePath = storage_path('app/public/' . $contract->signed_document_path);
                 if (file_exists($filePath)) {
-                    $filename = ($contract->contract_number ?? 'kontrak-' . $id) . '-signed.pdf';
+                    $filename = ($contract->title ?? 'kontrak-' . $id) . '-signed.pdf';
                     return response()->download($filePath, $filename, [
                         'Content-Type' => 'application/pdf',
                     ]);
@@ -518,7 +621,7 @@ class ContractReviewController extends Controller
                     'isHtml5ParserEnabled' => true,
                 ]);
 
-            $filename = ($contract->contract_number ?? 'kontrak-' . $id) . '.pdf';
+            $filename = ($contract->title ?? 'kontrak-' . $id) . '.pdf';
             $filename = preg_replace('/[\/\\\\]/', '-', $filename);
 
             return $pdf->download($filename);
@@ -534,7 +637,7 @@ class ContractReviewController extends Controller
     /**
      * POST /api/manager/contracts/{id}/upload-signed
      * Manager upload dokumen PDF yang sudah ditandatangani kedua pihak secara fisik.
-     * Setelah upload, pihak eksternal menerima email konfirmasi (bukan TTD lagi).
+     * Setelah upload, pihak kedua menerima email konfirmasi (bukan TTD lagi).
      */
     public function uploadSignedDocument(Request $request, int $id): JsonResponse
     {
@@ -574,7 +677,7 @@ class ContractReviewController extends Controller
                 ->max('iteration') ?? 0;
             $iteration++;
 
-            DB::transaction(function () use ($contract, $signer, $latestVersion, $signaturePath, $iteration, $request) {
+            DB::transaction(function () use ($contract, $signer, $latestVersion, $signaturePath, $iteration, $request, $user) {
                 // Simpan record tanda tangan
                 ContractSignerSignature::create([
                     'contract_signer_id' => $signer->id,
@@ -593,21 +696,21 @@ class ContractReviewController extends Controller
                     'signed_document_path' => $signaturePath,
                 ]);
 
-                // Kirim email konfirmasi ke pihak eksternal
+                // Kirim email konfirmasi ke pihak kedua
                 $this->dispatchExternalConfirmationEmails($contract, $signaturePath, $iteration);
 
                 // Notifikasi ke HRD
                 Notification::create([
                     'user_id' => $contract->created_by,
                     'contract_id' => $contract->id,
-                    'type' => 'signed_document_uploaded',
-                    'message' => "Dokumen kontrak {$contract->contract_number} yang sudah ditandatangani telah diupload. Menunggu konfirmasi pihak eksternal.",
-                    'is_read' => false,
+                    'type'        => 'signed_document_uploaded',
+                    'message'     => "Dokumen kontrak {$contract->contract_number} yang sudah ditandatangani telah diupload. Menunggu konfirmasi pihak eksternal.",
+                    'is_read'     => false,
                 ]);
             });
 
             return response()->json([
-                'message' => 'Dokumen berhasil diupload. Pihak eksternal akan menerima email konfirmasi.',
+                'message'         => 'Dokumen berhasil diupload. Pihak eksternal akan menerima email konfirmasi.',
                 'contract_status' => $contract->fresh()->status,
             ]);
         } catch (Exception $e) {
