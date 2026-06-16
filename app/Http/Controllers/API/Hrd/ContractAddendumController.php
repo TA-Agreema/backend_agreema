@@ -72,8 +72,7 @@ class ContractAddendumController extends Controller
                     'title'           => $validated['title'],
                     'description'     => $validated['description'] ?? null,
                     'document_path'   => $documentPath,
-                    // Effective date otomatis mengikuti tanggal berakhir kontrak
-                    'effective_date'  => $contract->end_date,
+                    'effective_date'  => $validated['effective_date'] ?? null,
                 ]);
             });
 

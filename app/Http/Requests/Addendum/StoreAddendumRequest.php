@@ -26,6 +26,7 @@ class StoreAddendumRequest extends FormRequest
             'addendum_number' => 'required|string|max:100',
             'description'     => 'nullable|string|max:5000',
             'document'        => 'nullable|file|mimes:pdf|max:10240',
+            'effective_date'  => 'nullable|date',
         ];
     }
 }
