@@ -1,4 +1,6 @@
 @php
+    $watermark = \App\Support\PdfContentNormalizer::extractWatermark($content ?? '');
+    $margins = \App\Support\PdfContentNormalizer::extractMargins($content ?? '');
     $renderedContent = \App\Support\PdfContentNormalizer::normalize($content ?? '');
 @endphp
 <!DOCTYPE html>
@@ -13,7 +15,10 @@
 
         @page {
             size: {{ ($template->paper_size ?? 'a4') === 'f4' ? '21.5cm 33cm' : 'A4' }};
-            margin: 2.54cm;
+            margin-top: {{ $margins['top'] }};
+            margin-bottom: {{ $margins['bottom'] }};
+            margin-left: {{ $margins['left'] }};
+            margin-right: {{ $margins['right'] }};
         }
 
         body {
@@ -27,6 +32,24 @@
 
         .template-body {
             width: 100%;
+            position: relative;
+            z-index: 1;
+        }
+
+        .document-watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            z-index: 0;
+            line-height: 0;
+            text-align: center;
+            transform-origin: center center;
+        }
+
+        .document-watermark img {
+            display: block;
+            width: 100%;
+            height: auto;
         }
 
         .template-body p {
@@ -73,6 +96,17 @@
         .template-body img {
             max-width: 100%;
             height: auto;
+        }
+
+        .template-body figure {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            max-width: 100%;
+        }
+
+        .template-body figure img {
+            display: block;
         }
 
         .template-body .pdf-image-container {
@@ -152,9 +186,19 @@
     </style>
 </head>
 <body>
+    @if($watermark)
+        <div
+            class="document-watermark"
+            style="width: {{ $watermark['size'] }}%; opacity: {{ $watermark['opacity'] }}; transform: translate(-50%, -50%) rotate({{ $watermark['rotation'] }}deg); -webkit-transform: translate(-50%, -50%) rotate({{ $watermark['rotation'] }}deg);"
+        >
+            <img src="{{ $watermark['src'] }}" alt="">
+        </div>
+    @endif
+
     <div class="template-body">
         {!! $renderedContent !!}
     </div>
 </body>
 </html>
+
 

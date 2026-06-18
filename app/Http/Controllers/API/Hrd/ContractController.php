@@ -8,6 +8,7 @@ use App\Models\Party;
 use App\Models\Contract;
 use App\Models\Template;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 use App\Models\Notification;
 use Illuminate\Http\Request;
 use App\Models\ContractParty;
@@ -19,6 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
+use Barryvdh\DomPDF\Facade\Pdf;
 use App\Http\Resources\Contract\ContractResource;
 use App\Http\Requests\Contract\StoreContractRequest;
 use App\Http\Requests\Contract\UpdateContractRequest;
@@ -44,6 +46,9 @@ class ContractController extends Controller
                     'latestVersion.fieldValues.fieldDefinition',
                 ])
                 ->orderByDesc('created_at');
+
+            // hanya menampilkan kontrak internal
+            $query->where('contract_type', 'internal');
 
             // filter berdasarkan parameter 'archive'
             if ($request->boolean('archive')) {
@@ -123,7 +128,7 @@ class ContractController extends Controller
             }
 
             $contract = DB::transaction(function () use ($validated) {
-                $contract = Contract::create(array_merge(Arr::except($validated, ['content', 'field_values', 'partner_id', 'signers']), [
+                $contract = Contract::create(array_merge(Arr::except($validated, ['content', 'field_values', 'partner_id', 'partner_name', 'parent_contract_id', 'signers']), [
                     'created_by' => Auth::id(),
                 ]));
 
@@ -190,8 +195,9 @@ class ContractController extends Controller
                         'created_by' => Auth::id(),
                     ]);
 
-                    if (!empty($validated['field_values']) && is_array($validated['field_values'])) {
-                        $version->fieldValues()->createMany($validated['field_values']);
+                    $fieldValues = $this->normalizeContractFieldValues($validated['field_values'] ?? []);
+                    if (!empty($fieldValues)) {
+                        $version->fieldValues()->createMany($fieldValues);
                     }
                 }
                 return $contract;
@@ -363,6 +369,75 @@ class ContractController extends Controller
     }
 
     /**
+     * GET /api/contracts/{id}/download
+     * Generate dan download kontrak sebagai PDF dari editor kontrak.
+     */
+    public function download(int $id)
+    {
+        try {
+            $contract = Contract::with([
+                'latestVersion',
+                'creator:id,name',
+                'signers.user:id,name,job_title',
+                'template.category:id,name',
+                'parties.party.individualDetail:id,party_id,full_name',
+                'parties.party.companyDetail:id,party_id,company_name',
+            ])->findOrFail($id);
+
+            if ($contract->signed_document_path) {
+                $filePath = storage_path('app/public/' . $contract->signed_document_path);
+                if (file_exists($filePath)) {
+                    $filename = $this->makePdfFilename($contract, true);
+
+                    return response()->download($filePath, $filename, [
+                        'Content-Type' => 'application/pdf',
+                    ]);
+                }
+            }
+
+            $content = $contract->latestVersion?->content ?? '<p>Konten tidak tersedia.</p>';
+            $html = view('pdf.contract', [
+                'contract' => $contract,
+                'content'  => $content,
+            ])->render();
+
+            $pdf = Pdf::loadHTML($html)
+                ->setPaper(($contract->paper_size ?? 'f4') === 'f4' ? [0, 0, 609.45, 935.43] : 'a4', 'portrait')
+                ->setOptions([
+                    'defaultFont' => 'sans-serif',
+                    'isRemoteEnabled' => false,
+                    'isHtml5ParserEnabled' => true,
+                ]);
+
+            $filename = $this->makePdfFilename($contract);
+
+            return $pdf->download($filename);
+        } catch (Exception $e) {
+            Log::error('Error downloading contract PDF', [
+                'contract_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Gagal mengunduh dokumen.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+    private function makePdfFilename(Contract $contract, bool $signed = false): string
+    {
+        $baseName = $contract->title ?: $contract->contract_number ?: 'kontrak-' . $contract->id;
+        $filename = Str::slug($baseName, '-');
+
+        if (empty($filename)) {
+            $filename = 'kontrak-' . $contract->id;
+        }
+
+        return $signed ? $filename . '-signed.pdf' : $filename . '.pdf';
+    }
+
+
+    /**
      * PATCH /api/contracts/{id}
      * Update contract
      */
@@ -379,7 +454,7 @@ class ContractController extends Controller
             }
 
             DB::transaction(function () use ($contract, $validated) {
-                $contract->update(Arr::except($validated, ['content', 'field_values', 'partner_id', 'signers']));
+                $contract->update(Arr::except($validated, ['content', 'field_values', 'partner_id', 'partner_name', 'parent_contract_id', 'signers']));
 
                 // Update signers if provided
                 if (array_key_exists('signers', $validated) && is_array($validated['signers'])) {
@@ -483,14 +558,16 @@ class ContractController extends Controller
                             'created_by' => Auth::id(),
                         ]);
 
-                        if (!empty($validated['field_values']) && is_array($validated['field_values'])) {
-                            $version->fieldValues()->createMany($validated['field_values']);
+                        $fieldValues = $this->normalizeContractFieldValues($validated['field_values'] ?? []);
+                        if (!empty($fieldValues)) {
+                            $version->fieldValues()->createMany($fieldValues);
                         }
                     } elseif ($latestVersion && array_key_exists('field_values', $validated)) {
                         $latestVersion->fieldValues()->delete();
 
-                        if (!empty($validated['field_values']) && is_array($validated['field_values'])) {
-                            $latestVersion->fieldValues()->createMany($validated['field_values']);
+                        $fieldValues = $this->normalizeContractFieldValues($validated['field_values'] ?? []);
+                        if (!empty($fieldValues)) {
+                            $latestVersion->fieldValues()->createMany($fieldValues);
                         }
                     }
                 }
@@ -610,9 +687,25 @@ class ContractController extends Controller
             $hasInternal = $signers->where('signer_type', 'internal')->isNotEmpty();
             $hasExternal = $signers->where('signer_type', 'external')->isNotEmpty();
 
-            if (!$hasInternal || !$hasExternal) {
+            if (!$hasInternal) {
                 return response()->json([
                     'message' => 'Contract must have at least one internal and one external signer before submission',
+                ], 422);
+            }
+
+            $invalidExternalSigner = $signers->first(function ($signer) {
+                return $signer->signer_type === 'external'
+                    && (
+                        blank($signer->signer_name)
+                        || blank($signer->signer_role)
+                        || blank($signer->external_email)
+                        || !filter_var($signer->external_email, FILTER_VALIDATE_EMAIL)
+                    );
+            });
+
+            if ($invalidExternalSigner) {
+                return response()->json([
+                    'message' => 'External signer must have a valid name, role, and email before submission',
                 ], 422);
             }
 
@@ -625,11 +718,19 @@ class ContractController extends Controller
                         'user_id' => $signer->user_id,
                         'contract_id' => $contract->id,
                         'type' => 'review_requested',
-                        'message' => "Contract {$contract->contract_number} requires your review.",
+                        'message' => "{$contract->title} memerlukan peninjauan Anda.",
                         'is_read' => false,
                     ]);
                 }
             }
+
+            Notification::create([
+                'user_id'     => $contract->created_by,
+                'contract_id' => $contract->id,
+                'type'        => 'contract_submitted',
+                'message'     => "{$contract->title} berhasil diajukan dan sedang menunggu peninjauan.",
+                'is_read'     => false,
+            ]);
 
             return response()->json([
                 'message' => 'Contract submitted for review successfully',
@@ -646,5 +747,27 @@ class ContractController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function normalizeContractFieldValues(array $fieldValues): array
+    {
+        $normalized = [];
+
+        foreach ($fieldValues as $fieldValue) {
+            $fieldDefinitionId = (int) ($fieldValue['field_definition_id'] ?? 0);
+            if ($fieldDefinitionId <= 0) {
+                continue;
+            }
+
+            $value = $fieldValue['value'] ?? null;
+            $value = is_string($value) ? trim($value) : $value;
+
+            $normalized[$fieldDefinitionId] = [
+                'field_definition_id' => $fieldDefinitionId,
+                'value' => $value === '' ? null : $value,
+            ];
+        }
+
+        return array_values($normalized);
     }
 }

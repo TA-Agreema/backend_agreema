@@ -22,14 +22,14 @@ class ContractActivatedMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: "Kontrak Aktif: {$this->contract->title} ({$this->contract->contract_number})",
+            subject: "Kontrak Sah: {$this->contract->title} ({$this->contract->contract_number})",
         );
     }
 
     public function content(): Content
     {
         return new Content(
-            markdown: 'emails.contract.activated',
+            markdown: 'emails.contract.contract-sanctioned',
             with: [
                 'contract'      => $this->contract,
                 'recipientName' => $this->recipientName,

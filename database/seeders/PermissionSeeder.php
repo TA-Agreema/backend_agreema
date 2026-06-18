@@ -48,6 +48,7 @@ class PermissionSeeder extends Seeder
             'create.template',
             'update.template',
             'delete.template',
+            'download.template',
         ];
 
         foreach ($permissions as $permission) {

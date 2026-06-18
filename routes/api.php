@@ -15,6 +15,8 @@ use App\Http\Controllers\API\Hrd\ContractTerminationController;
 use App\Http\Controllers\API\Manager\ContractReviewController;
 use App\Http\Controllers\API\External\ExternalContractController;
 use App\Http\Controllers\API\DashboardController;
+use App\Http\Controllers\API\NotificationController;
+use App\Http\Controllers\API\Hrd\ExternalPartnerContractController;
 
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -69,6 +71,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/generate-number', [ContractController::class, 'generateNumber'])->middleware('permission:create.contract');
         Route::get('/', [ContractController::class, 'index'])->middleware('permission:read.contracts');
         Route::post('/', [ContractController::class, 'store'])->middleware('permission:create.contract');
+        Route::get('/{id}/download', [ContractController::class, 'download'])->middleware('permission:download.contract');
         Route::get('/{id}', [ContractController::class, 'show'])->middleware('permission:read.contracts');
         Route::patch('/{id}', [ContractController::class, 'update'])->middleware('permission:update.contract');
         Route::delete('/{id}', [ContractController::class, 'destroy'])->middleware('permission:delete.contract');
@@ -93,14 +96,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [ContractReviewController::class, 'show']);
         Route::post('/{id}/review', [ContractReviewController::class, 'review']);
         Route::post('/{id}/sign', [ContractReviewController::class, 'sign']);
-        Route::get('/{id}/download', [ContractReviewController::class, 'download']);
+        Route::get('/{id}/download', [ContractReviewController::class, 'download'])->middleware('permission:download.contract');
         Route::post('/{id}/upload-signed', [ContractReviewController::class, 'uploadSignedDocument']);
     });
 
     // Templates
     Route::prefix('templates')->group(function () {
         Route::get('/', [TemplateController::class, 'index'])->middleware('permission:read.template');
-        Route::get('/{id}/download', [TemplateController::class, 'download'])->middleware('permission:read.template');
+        Route::get('/{id}/download', [TemplateController::class, 'download'])->middleware('permission:download.template');
         Route::get('/{id}', [TemplateController::class, 'show'])->middleware('permission:read.template');
         Route::post('/', [TemplateController::class, 'store'])->middleware('permission:create.template');
         Route::patch('/{id}', [TemplateController::class, 'update'])->middleware('permission:update.template');
@@ -115,5 +118,19 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/{id}', [FieldDefinitionController::class, 'update']);
         Route::delete('/{id}', [FieldDefinitionController::class, 'destroy']);
     });
-});
 
+    // Notifications
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [NotificationController::class, 'index']);
+        Route::patch('/read-all', [NotificationController::class, 'markAllRead']);
+        Route::patch('/{id}/read', [NotificationController::class, 'markRead']);
+        Route::delete('/{id}', [NotificationController::class, 'destroy']);
+    });
+
+    // Kontrak Mitra (Eksternal)
+    Route::prefix('partner-contracts')->middleware('permission:read.contracts')->group(function () {
+        Route::get('/', [ExternalPartnerContractController::class, 'index']);
+        Route::post('/', [ExternalPartnerContractController::class, 'store'])->middleware('permission:create.contract');
+        Route::delete('/{id}', [ExternalPartnerContractController::class, 'destroy'])->middleware('permission:delete.contract');
+    });
+});

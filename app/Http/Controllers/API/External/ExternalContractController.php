@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API\External;
 
 use Exception;
+use Carbon\Carbon;
 use App\Models\Contract;
 use Illuminate\Support\Str;
 use App\Models\Notification;
@@ -150,85 +151,172 @@ class ExternalContractController extends Controller
                         'review_status' => 'approved',
                     ]);
 
-                    $contract->update(['status' => 'active']);
+                    $contract->update(['status' => 'signed']);
+
+                    // Langsung aktifkan jika start_date sudah tiba
+                    $this->activateIfReady($contract);
 
                     // Kirim email notifikasi ke semua pihak
                     $this->sendActivationEmails($contract);
 
-                    Notification::create([
-                        'user_id'     => $contract->created_by,
-                        'contract_id' => $contract->id,
-                        'type'        => 'contract_activated',
-                        'message'     => "Kontrak {$contract->contract_number} telah disetujui pihak eksternal dan kini aktif.",
-                        'is_read'     => false,
-                    ]);
-                });
+                    $contract->loadMissing('signers.user');
 
-                return response()->json(['message' => 'Kontrak berhasil disetujui dan kini aktif.']);
-            }
+                    if ($contract->status === 'active') {
+                        $startDate = $contract->start_date
+                            ? $contract->start_date->locale('id')->isoFormat('D MMMM YYYY')
+                            : '(belum ditentukan)';
 
-            DB::transaction(function () use ($contract, $signer, $tokenRecord, $latestVersion, $validated) {
-                ContractSignerReview::create([
-                    'contract_signer_id'  => $signer->id,
-                    'contract_version_id' => $latestVersion->id,
-                    'iteration'           => $tokenRecord->iteration,
-                    'status'              => $validated['status'],
-                    'notes'               => $validated['notes'] ?? null,
-                    'reviewed_at'         => now(),
-                ]);
+                        $endDate = $contract->end_date
+                            ? $contract->end_date->locale('id')->isoFormat('D MMMM YYYY')
+                            : '(belum ditentukan)';
 
-                $tokenRecord->update([
-                    'used_at'       => now(),
-                    'review_status' => $validated['status'],
-                    'review_notes'  => $validated['notes'] ?? null,
-                ]);
-
-                if ($validated['status'] === 'approved') {
-                    $allApproved = $this->checkAllExternalApproved($contract, $tokenRecord->iteration);
-
-                    if ($allApproved) {
-                        $contract->update(['status' => 'active']);
-
+                    // Notifikasi ke HRD — kontrak langsung aktif
                         Notification::create([
                             'user_id'     => $contract->created_by,
                             'contract_id' => $contract->id,
-                            'type'        => 'external_all_approved',
-                            'message'     => "Semua pihak eksternal telah menyetujui kontrak {$contract->contract_number}. Kontrak aktif.",
+                            'type'        => 'contract_activated',
+                            'message'     => "Pihak kedua telah menyetujui {$contract->title}. Kontrak telah aktif sampai pada tanggal {$endDate}.",
                             'is_read'     => false,
                         ]);
+
+                        foreach ($contract->signers as $signerItem) {
+                            if ($signerItem->signer_type === 'internal' && $signerItem->user_id) {
+                                Notification::create([
+                                    'user_id'     => $signerItem->user_id,
+                                    'contract_id' => $contract->id,
+                                    'type'        => 'contract_activated',
+                                    'message'     => "Pihak kedua telah menyetujui {$contract->title}. Kontrak telah aktif sampai pada tanggal {$endDate}.",
+                                    'is_read'     => false,
+                                ]);
+                            }
+                        }
                     } else {
+                        $startDate = $contract->start_date
+                            ? $contract->start_date->locale('id')->isoFormat('D MMMM YYYY')
+                            : '(belum ditentukan)';
+
+                        // Notifikasi ke HRD — kontrak belum aktif
+                            Notification::create([
+                                'user_id'     => $contract->created_by,
+                                'contract_id' => $contract->id,
+                                'type'        => 'external_approved',
+                                'message'     => "Pihak kedua telah menyetujui {$contract->title}. Kontrak akan aktif pada tanggal {$startDate}.",
+                                'is_read'     => false,
+                            ]);
+
+                            foreach ($contract->signers as $signerItem) {
+                                if ($signerItem->signer_type === 'internal' && $signerItem->user_id) {
+                                    Notification::create([
+                                        'user_id'     => $signerItem->user_id,
+                                        'contract_id' => $contract->id,
+                                        'type'        => 'external_approved',
+                                        'message'     => "Pihak kedua telah menyetujui dokumen {$contract->title} yang diupload. Kontrak akan aktif pada tanggal {$startDate}.",
+                                        'is_read'     => false,
+                                    ]);
+                                }
+                            }
+                        }
+                    });
+                    return response()->json(['message' => 'Kontrak berhasil disetujui dan kini aktif.']);
+                }
+
+                DB::transaction(function () use ($contract, $signer, $tokenRecord, $latestVersion, $validated) {
+                    ContractSignerReview::create([
+                        'contract_signer_id'  => $signer->id,
+                        'contract_version_id' => $latestVersion->id,
+                        'iteration'           => $tokenRecord->iteration,
+                        'status'              => $validated['status'],
+                        'notes'               => $validated['notes'] ?? null,
+                        'reviewed_at'         => now(),
+                    ]);
+
+                    $tokenRecord->update([
+                        'used_at'       => now(),
+                        'review_status' => $validated['status'],
+                        'review_notes'  => $validated['notes'] ?? null,
+                    ]);
+
+                    if ($validated['status'] === 'approved') {
+                        $allApproved = $this->checkAllExternalApproved($contract, $tokenRecord->iteration);
+
+                        if ($allApproved) {
+                            $contract->update(['status' => 'signed']);
+
+                            Notification::create([
+                                'user_id'     => $contract->created_by,
+                                'contract_id' => $contract->id,
+                                'type'        => 'external_approved',
+                                'message'     => "Pihak kedua telah menyetujui {$contract->title}. Kontrak aktif.",
+                                'is_read'     => false,
+                            ]);
+                        // hapus
+                        } else {
+                            Notification::create([
+                                'user_id'     => $contract->created_by,
+                                'contract_id' => $contract->id,
+                                'type'        => 'external_partial_approved',
+                                'message'     => "Satu pihak eksternal telah menyetujui {$contract->title}. Menunggu pihak lain.",
+                                'is_read'     => false,
+                            ]);
+                        }
+                    } else {
+                        $contract->update(['status' => 'revision']);
+
+                        // Expire semua token external yang belum digunakan
+                        ExternalSignatureToken::whereHas('contractSigner', function ($q) use ($contract) {
+                            $q->where('contract_id', $contract->id);
+                        })
+                            ->whereNull('used_at')
+                            ->update(['expired_at' => now()]);
+
+                        // Reset TTD internal — hapus semua signature iterasi saat ini
+                        // agar semua internal signer harus TTD ulang
+                        $internalSignerIds = ContractSigner::where('contract_id', $contract->id)
+                            ->where('signer_type', 'internal')
+                            ->pluck('id');
+
+                        if ($internalSignerIds->isNotEmpty()) {
+                            // Ambil iterasi tertinggi yang ada
+                            $currentIteration = ContractSignerSignature::whereIn('contract_signer_id', $internalSignerIds)
+                                ->max('iteration') ?? 0;
+
+                            // Soft-invalidate: tandai signature iterasi ini dengan iteration = -iteration
+                            // (tidak menghapus data, hanya menyimpan riwayat)
+                            ContractSignerSignature::whereIn('contract_signer_id', $internalSignerIds)
+                                ->where('iteration', $currentIteration)
+                                ->update(['iteration' => -$currentIteration]);
+                        }
+
+                        // Notifikasi ke HRD
                         Notification::create([
                             'user_id'     => $contract->created_by,
                             'contract_id' => $contract->id,
-                            'type'        => 'external_partial_approved',
-                            'message'     => "Satu pihak eksternal telah menyetujui kontrak {$contract->contract_number}. Menunggu pihak lain.",
+                            'type'        => 'external_revision_requested',
+                            'message'     => "Pihak kedua meminta revisi {$contract->title}. Alasan: {$validated['notes']}",
                             'is_read'     => false,
                         ]);
+
+                        // Notifikasi ke Manager
+                        foreach ($contract->signers as $signer) {
+                            if ($signer->signer_type === 'internal' && $signer->user_id && $signer->user_id !== $contract->created_by) {
+                                Notification::create([
+                                    'user_id'     => $signer->user_id,
+                                    'contract_id' => $contract->id,
+                                    'type'        => 'external_revision_requested',
+                                    'message'     => "{$contract->title} memiliki revisi dari pihak kedua. Alasan: {$validated['notes']}",
+                                    'is_read'     => false,
+                                ]);
+                            }
+                        }
                     }
-                } else {
-                    $contract->update(['status' => 'revision']);
-
-                    ExternalSignatureToken::whereHas('contractSigner', function ($q) use ($contract) {
-                        $q->where('contract_id', $contract->id);
-                    })
-                        ->whereNull('used_at')
-                        ->update(['expired_at' => now()]);
-
-                    Notification::create([
-                        'user_id'     => $contract->created_by,
-                        'contract_id' => $contract->id,
-                        'type'        => 'external_revision_requested',
-                        'message'     => "Pihak eksternal meminta revisi kontrak {$contract->contract_number}: {$validated['notes']}",
-                        'is_read'     => false,
-                    ]);
-                }
-            });
+                });
 
             return response()->json([
                 'message' => $validated['status'] === 'approved'
                     ? 'Kontrak berhasil disetujui.'
                     : 'Permintaan revisi berhasil dikirim.',
             ]);
+
         } catch (Exception $e) {
             Log::error('External review error', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
@@ -301,10 +389,51 @@ class ExternalContractController extends Controller
                     ->doesntExist();
 
                 if ($allSigned) {
-                    $contract->update(['status' => 'active']);
+                    $contract->update(['status' => 'signed']);
+
+                    // cek start_date, baru aktif jika sudah tiba
+                    $this->activateIfReady($contract);
 
                     // Kirim email notifikasi ke semua pihak
                     $this->sendActivationEmails($contract);
+                }
+
+                $contract->loadMissing('signers.user');
+
+                $startDate = $contract->start_date
+                    ? $contract->start_date->locale('id')->isoFormat('D MMMM YYYY')
+                    : '(belum ditentukan)';
+
+                $endDate = $contract->end_date
+                    ? $contract->end_date->locale('id')->isoFormat('D MMMM YYYY')
+                    : '(belum ditentukan)';
+
+                $isNowActive = $contract->status === 'active';
+
+                // Notifikasi ke HRD (pembuat kontrak)
+                Notification::create([
+                    'user_id'     => $contract->created_by,
+                    'contract_id' => $contract->id,
+                    'type'        => $isNowActive ? 'contract_activated' : 'all_reviewers_signed',
+                    'message'     => $isNowActive
+                        ? "Pihak kedua telah menandatangani {$contract->title}. Kontrak telah aktif sampai pada tanggal {$endDate}."
+                        : "Pihak kedua telah menandatangani {$contract->title}. Kontrak akan aktif pada tanggal {$startDate}.",
+                    'is_read'     => false,
+                ]);
+
+                // Notifikasi ke semua internal signer (manager)
+                foreach ($contract->signers as $signer) {
+                    if ($signer->signer_type === 'internal' && $signer->user_id) {
+                        Notification::create([
+                            'user_id'     => $signer->user_id,
+                            'contract_id' => $contract->id,
+                            'type'        => $isNowActive ? 'contract_activated' : 'all_reviewers_signed',
+                            'message'     => $isNowActive
+                                ? "Pihak kedua telah menandatangani {$contract->title}. Kontrak telah aktif sampai pada tanggal {$endDate}."
+                                : "Pihak kedua telah menandatangani {$contract->title}. Kontrak akan aktif pada tanggal {$startDate}.",
+                            'is_read'     => false,
+                        ]);
+                    }
                 }
             });
 
@@ -353,6 +482,19 @@ class ExternalContractController extends Controller
                 Mail::to($signer->external_email)
                     ->send(new ContractActivatedMail($contract, $name));
             }
+        }
+    }
+
+    /**
+     * Langsung aktifkan kontrak jika start_date sudah tiba atau hari ini.
+     * Dipanggil setelah status diubah ke signed.
+     */
+    private function activateIfReady(Contract $contract): void
+    {
+        $contract->refresh();
+
+        if ($contract->start_date && $contract->start_date->lte(Carbon::today())) {
+            $contract->update(['status' => 'active']);
         }
     }
 
