@@ -1,0 +1,142 @@
+{
+  "info": {
+    "name": "Agreema Contracts API",
+    "_postman_id": "contracts-api-collection",
+    "description": "Collection to test /contracts endpoints. Assumes you already have a working /login request that returns an access token (Sanctum cookie or token).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get Contracts (list)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/contracts",
+          "host": ["{{baseUrl}}"],
+          "path": ["api","contracts"]
+        }
+      }
+    },
+    {
+      "name": "Create Contract",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"contract_number\": \"CN-0001\",\n  \"external_contract_number\": \"EXT-0001\",\n  \"title\": \"Perjanjian Kerjasama\",\n  \"start_date\": \"2026-05-03\",\n  \"end_date\": \"2027-05-03\",\n  \"template_id\": null\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/contracts",
+          "host": ["{{baseUrl}}"],
+          "path": ["api","contracts"]
+        }
+      }
+    },
+    {
+      "name": "Get Contract (detail)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/contracts/:id",
+          "host": ["{{baseUrl}}"],
+          "path": ["api","contracts",":id"]
+        }
+      }
+    },
+    {
+      "name": "Update Contract",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"Perjanjian Kerjasama (Updated)\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/contracts/:id",
+          "host": ["{{baseUrl}}"],
+          "path": ["api","contracts",":id"]
+        }
+      }
+    },
+    {
+      "name": "Delete Contract",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/contracts/:id",
+          "host": ["{{baseUrl}}"],
+          "path": ["api","contracts",":id"]
+        }
+      }
+    },
+    {
+      "name": "Toggle Contract Status",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"active\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/contracts/:id/toggle-status",
+          "host": ["{{baseUrl}}"],
+          "path": ["api","contracts",":id","toggle-status"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000"
+    }
+  ]
+}

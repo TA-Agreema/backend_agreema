@@ -1,16 +1,16 @@
 @component('mail::message')
-# Kontrak Telah Aktif
+# Kontrak Telah Disahkan
 
-Halo **{{ $recipientName }}**,
+Halo, **{{ $recipientName }}**!
 
-Kami ingin memberitahukan bahwa kontrak berikut telah resmi **aktif** dan berlaku setelah semua pihak memberikan persetujuan.
+Kami ingin memberitahukan bahwa kontrak berikut telah resmi **disahkan** dan akan berlaku pada tanggal yang telah ditentukan sesuai di bawah ini:
 
 @component('mail::table')
 | | |
 |:---|:---|
 | **Judul Kontrak** | {{ $contract->title }} |
 | **Nomor Kontrak** | {{ $contract->contract_number ?? '-' }} |
-| **Tanggal Aktif** | {{ now()->locale('id')->isoFormat('D MMMM YYYY') }} |
+| **Tanggal Disahkan** | {{ now()->locale('id')->isoFormat('D MMMM YYYY') }} |
 @if($contract->start_date)
 | **Mulai Berlaku** | {{ \Carbon\Carbon::parse($contract->start_date)->locale('id')->isoFormat('D MMMM YYYY') }} |
 @endif
@@ -23,12 +23,12 @@ Kami ingin memberitahukan bahwa kontrak berikut telah resmi **aktif** dan berlak
 📎 **Dokumen kontrak yang telah ditandatangani terlampir** dalam email ini.
 @endif
 
-Harap simpan email ini sebagai bukti bahwa kontrak telah aktif dan berlaku bagi semua pihak.
+Harap pastikan untuk membaca kembali isi kontrak dan menyimpan email ini sebagai bukti bahwa kontrak telah sah.
 
-Terima kasih telah menggunakan layanan kami.
+Terima kasih telah bekerja sama dengan kami.
 
 Salam,<br>
-Tim **{{ config('app.name') }}**
+**PT. Solutionlabs Grup Indonesia**
 
 ---
 <small>Email ini dikirim secara otomatis. Mohon tidak membalas email ini.</small>

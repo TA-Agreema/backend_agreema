@@ -15,6 +15,8 @@ use App\Http\Controllers\API\Hrd\ContractTerminationController;
 use App\Http\Controllers\API\Manager\ContractReviewController;
 use App\Http\Controllers\API\External\ExternalContractController;
 use App\Http\Controllers\API\DashboardController;
+use App\Http\Controllers\API\NotificationController;
+use App\Http\Controllers\API\Hrd\ExternalPartnerContractController;
 
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -77,18 +79,19 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Addendum Routes (HRD only)
         Route::get('/{id}/addendums', [ContractAddendumController::class, 'index'])->middleware('permission:read.contracts');
-        Route::post('/{id}/addendums', [ContractAddendumController::class, 'store'])->middleware('permission:create.addendum');
-        Route::delete('/{contractId}/addendums/{addendumId}', [ContractAddendumController::class, 'destroy'])->middleware('permission:create.addendum');
+        Route::post('/{id}/addendums', [ContractAddendumController::class, 'store'])->middleware('permission:create.addendum|create.contract_addendum');
+        Route::delete('/{contractId}/addendums/{addendumId}', [ContractAddendumController::class, 'destroy'])->middleware('permission:create.addendum|create.contract_addendum');
 
         // Termination Routes (HRD only)
         Route::get('/{id}/terminations', [ContractTerminationController::class, 'index'])->middleware('permission:read.contracts');
-        Route::post('/{id}/terminations', [ContractTerminationController::class, 'store'])->middleware('permission:create.terminate');
-        Route::delete('/{contractId}/terminations/{terminationId}', [ContractTerminationController::class, 'destroy'])->middleware('permission:create.terminate');
+        Route::post('/{id}/terminations', [ContractTerminationController::class, 'store'])->middleware('permission:create.terminate|terminate.contract');
+        Route::delete('/{contractId}/terminations/{terminationId}', [ContractTerminationController::class, 'destroy'])->middleware('permission:create.terminate|terminate.contract');
     });
 
     // Manager Review Routes
     Route::prefix('manager/contracts')->middleware('permission:read.contracts')->group(function () {
         Route::get('/', [ContractReviewController::class, 'index']);
+        Route::get('/archive', [ContractReviewController::class, 'archive']); // ← arsip per-manager
         Route::get('/{id}', [ContractReviewController::class, 'show']);
         Route::post('/{id}/review', [ContractReviewController::class, 'review']);
         Route::post('/{id}/sign', [ContractReviewController::class, 'sign']);
@@ -99,6 +102,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Templates
     Route::prefix('templates')->group(function () {
         Route::get('/', [TemplateController::class, 'index'])->middleware('permission:read.template');
+        Route::get('/{id}/download', [TemplateController::class, 'download'])->middleware('permission:read.template');
         Route::get('/{id}', [TemplateController::class, 'show'])->middleware('permission:read.template');
         Route::post('/', [TemplateController::class, 'store'])->middleware('permission:create.template');
         Route::patch('/{id}', [TemplateController::class, 'update'])->middleware('permission:update.template');
@@ -113,4 +117,20 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/{id}', [FieldDefinitionController::class, 'update']);
         Route::delete('/{id}', [FieldDefinitionController::class, 'destroy']);
     });
+
+    // Notifications
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [NotificationController::class, 'index']);
+        Route::patch('/read-all', [NotificationController::class, 'markAllRead']);
+        Route::patch('/{id}/read', [NotificationController::class, 'markRead']);
+        Route::delete('/{id}', [NotificationController::class, 'destroy']);
+    });
+
+    // Kontrak Mitra (Eksternal)
+    Route::prefix('partner-contracts')->middleware('permission:read.contracts')->group(function () {
+        Route::get('/', [ExternalPartnerContractController::class, 'index']);
+        Route::post('/', [ExternalPartnerContractController::class, 'store'])->middleware('permission:create.contract');
+        Route::delete('/{id}', [ExternalPartnerContractController::class, 'destroy'])->middleware('permission:delete.contract');
+    });
 });
+

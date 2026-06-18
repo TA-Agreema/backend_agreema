@@ -3,12 +3,18 @@
 namespace App\Http\Controllers\API\Hrd;
 
 use Exception;
+use App\Models\User;
+use App\Models\Party;
 use App\Models\Contract;
+use App\Models\Template;
 use Illuminate\Support\Arr;
 use App\Models\Notification;
 use Illuminate\Http\Request;
+use App\Models\ContractParty;
 use App\Models\ContractSigner;
+use App\Models\ContractCategory;
 use Illuminate\Http\JsonResponse;
+use App\Models\PartyCompanyDetail;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
@@ -30,21 +36,25 @@ class ContractController extends Controller
                 ->with([
                     'template.category:id,name',
                     'creator:id,name',
-                    'addendums:id,contract_id,addendum_number,description,effective_date,created_at',
+                    'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
                     'termination',
                     'signers.reviews',
                     'parties.party.individualDetail:id,party_id,full_name',
                     'parties.party.companyDetail:id,party_id,company_name',
+                    'latestVersion.fieldValues.fieldDefinition',
                 ])
                 ->orderByDesc('created_at');
 
+            // hanya menampilkan kontrak internal
+            $query->where('contract_type', 'internal');
+
             // filter berdasarkan parameter 'archive'
             if ($request->boolean('archive')) {
-                // Halaman arsip: hanya tampilkan rejected & terminated
-                $query->whereIn('status', ['rejected', 'terminated']);
+                // Halaman arsip: hanya tampilkan rejected, terminated, & expired
+                $query->whereIn('status', ['rejected', 'terminated', 'expired']);
             } else {
-                // Daftar kontrak: sembunyikan rejected & terminated
-                $query->whereNotIn('status', ['rejected', 'terminated']);
+                // Daftar kontrak: sembunyikan rejected, terminated, & expired
+                $query->whereNotIn('status', ['rejected', 'terminated', 'expired']);
             }
 
             $validated = $request->validate([
@@ -100,7 +110,7 @@ class ContractController extends Controller
                 $categoryId = isset($validated['category_id']) ? (int) $validated['category_id'] : null;
                 // If category_id not provided, try derive from template (if template_id provided)
                 if (empty($categoryId) && !empty($validated['template_id'])) {
-                    $tpl = \App\Models\Template::find($validated['template_id']);
+                    $tpl = Template::find($validated['template_id']);
                     if ($tpl && !empty($tpl->category_id)) {
                         $categoryId = (int) $tpl->category_id;
                     }
@@ -108,21 +118,32 @@ class ContractController extends Controller
                 $validated['contract_number'] = $this->generateContractNumber($categoryId);
             }
 
+            if (empty($validated['paper_size'])) {
+                $template = !empty($validated['template_id'])
+                    ? Template::find($validated['template_id'])
+                    : null;
+                $validated['paper_size'] = $template?->paper_size ?? 'f4';
+            }
+
             $contract = DB::transaction(function () use ($validated) {
-                $contract = Contract::create(array_merge(Arr::except($validated, ['content', 'partner_id', 'signers']), [
+                $contract = Contract::create(array_merge(Arr::except($validated, ['content', 'field_values', 'partner_id', 'signers']), [
                     'created_by' => Auth::id(),
                 ]));
 
                 // Insert signers if provided
                 if (!empty($validated['signers']) && is_array($validated['signers'])) {
                     foreach ($validated['signers'] as $index => $signerData) {
+                        if (empty(trim($signerData['name'] ?? ''))) {
+                            continue;
+                        }
+
                         $userId = null;
                         if ($signerData['type'] === 'internal') {
-                            $user = \App\Models\User::where('name', $signerData['name'])->first();
+                            $user = User::where('name', $signerData['name'])->first();
                             if ($user) $userId = $user->id;
                         }
 
-                        \App\Models\ContractSigner::create([
+                        ContractSigner::create([
                             'contract_id' => $contract->id,
                             'user_id' => $userId,
                             'signer_type' => $signerData['type'],
@@ -133,24 +154,21 @@ class ContractController extends Controller
                         ]);
                     }
                 }
-
-                // If partner_id provided, link it as party_order = 2 (partner)
                 if (!empty($validated['partner_id'])) {
-                    \App\Models\ContractParty::create([
+                    ContractParty::create([
                         'contract_id' => $contract->id,
                         'party_id' => (int) $validated['partner_id'],
                         'party_order' => 2,
                     ]);
                 } elseif (!empty($validated['partner_name'])) {
-                    // If partner_name provided (manual input), try to find an existing company party
                     $name = trim($validated['partner_name']);
-                    $existing = \App\Models\Party::whereHas('companyDetail', function ($q) use ($name) {
+                    $existing = Party::whereHas('companyDetail', function ($q) use ($name) {
                         $q->whereRaw('LOWER(company_name) = ?', [strtolower($name)]);
                     })->first();
 
                     if (!$existing) {
-                        $party = \App\Models\Party::create(['party_type' => 'company']);
-                        \App\Models\PartyCompanyDetail::create([
+                        $party = Party::create(['party_type' => 'company']);
+                        PartyCompanyDetail::create([
                             'party_id' => $party->id,
                             'company_name' => $name,
                             'address' => null,
@@ -161,20 +179,23 @@ class ContractController extends Controller
                     }
 
                     if (!empty($partyId)) {
-                        \App\Models\ContractParty::create([
+                        ContractParty::create([
                             'contract_id' => $contract->id,
                             'party_id' => $partyId,
                             'party_order' => 2,
                         ]);
                     }
                 }
-
                 if (!empty($validated['content'])) {
-                    $contract->versions()->create([
-                        'version_number' => 1,
+                    $version = $contract->versions()->create([
+                        'version_number' => 'V1',
                         'content' => $validated['content'],
                         'created_by' => Auth::id(),
                     ]);
+
+                    if (!empty($validated['field_values']) && is_array($validated['field_values'])) {
+                        $version->fieldValues()->createMany($validated['field_values']);
+                    }
                 }
                 return $contract;
             });
@@ -185,10 +206,11 @@ class ContractController extends Controller
                 'signers.user',
                 'signers.reviews',
                 'statusLogs.changedBy:id,name',
-                'addendums:id,contract_id,addendum_number,description,effective_date,created_at',
+                'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
                 'termination',
                 'parties.party.individualDetail:id,party_id,full_name',
                 'parties.party.companyDetail:id,party_id,company_name',
+                'versions.creator:id,name',
             ]);
 
             return response()->json([
@@ -209,15 +231,66 @@ class ContractController extends Controller
     }
 
     /**
-     * Generate a unique contract number based on category prefix.
-     * Prefix is derived from category.number_prefix if present, otherwise
-     * from the category name by taking the first character of each word
-     * (e.g. "Perjanjian Kerja Waktu Tertentu" -> PKWT).
-     *
      * @param int|null $categoryId
      * @return string
      */
     private function generateContractNumber(?int $categoryId = null): string
+    {
+        $prefix = $this->resolveContractNumberPrefix($categoryId);
+        $year = now()->year;
+        $month = now()->month;
+        $romanMonth = $this->getRomanMonth($month);
+        $sequence = $this->getNextContractSequence($prefix, $year, $month);
+        $candidate = $this->buildContractNumber($prefix, $sequence, $romanMonth, $year);
+
+        while (Contract::where('contract_number', $candidate)->exists()) {
+            $sequence++;
+            $candidate = $this->buildContractNumber($prefix, $sequence, $romanMonth, $year);
+        }
+
+        return $candidate;
+    }
+
+    private function resolveContractNumberPrefix(?int $categoryId): string
+    {
+        if (!$categoryId) {
+            return 'SPK';
+        }
+
+        $category = ContractCategory::find($categoryId);
+        if (!$category) {
+            return 'SPK';
+        }
+
+        if (!empty($category->number_prefix)) {
+            return strtoupper(trim($category->number_prefix));
+        }
+
+        return $this->buildPrefixFromCategoryName($category->name);
+    }
+
+    private function buildPrefixFromCategoryName(?string $categoryName): string
+    {
+        if (empty($categoryName)) {
+            return 'SPK';
+        }
+
+        $words = preg_split('/[^\p{L}\p{N}]+/u', trim($categoryName)) ?: [];
+        $letters = [];
+
+        foreach ($words as $word) {
+            $word = trim($word);
+            if ($word === '') {
+                continue;
+            }
+
+            $letters[] = mb_substr($word, 0, 1, 'UTF-8');
+        }
+
+        return count($letters) > 0 ? strtoupper(implode('', $letters)) : 'SPK';
+    }
+
+    private function getRomanMonth(int $month): string
     {
         $romanMonths = [
             1 => 'I',
@@ -234,51 +307,24 @@ class ContractController extends Controller
             12 => 'XII',
         ];
 
-        // Resolve prefix: prefer explicit number_prefix, otherwise derive from category name
-        $prefix = 'SPK';
-        if ($categoryId) {
-            $cat = \App\Models\ContractCategory::find($categoryId);
-            if ($cat) {
-                if (!empty($cat->number_prefix)) {
-                    $prefix = strtoupper(trim($cat->number_prefix));
-                } elseif (!empty($cat->name)) {
-                    // Split on non-word characters and take the first letter of each word
-                    $words = preg_split('/[^\p{L}\p{N}]+/u', trim($cat->name));
-                    $letters = [];
-                    foreach ($words as $w) {
-                        $w = trim($w);
-                        if ($w === '')
-                            continue;
-                        $letters[] = mb_substr($w, 0, 1, 'UTF-8');
-                    }
-                    if (count($letters) > 0) {
-                        $prefix = strtoupper(implode('', $letters));
-                    }
-                }
-            }
-        }
+        return $romanMonths[$month] ?? 'I';
+    }
 
-        $year = now()->year;
-        $month = now()->month;
-        $roman = $romanMonths[$month];
-
-        // Count contracts of this prefix/month/year for the sequence
+    private function getNextContractSequence(string $prefix, int $year, int $month): int
+    {
         $count = Contract::whereYear('created_at', $year)
             ->whereMonth('created_at', $month)
             ->where('contract_number', 'like', "{$prefix}-%")
             ->count();
 
-        $seq = str_pad($count + 1, 3, '0', STR_PAD_LEFT);
-        $candidate = "{$prefix}-{$seq}/SLAB/{$roman}/{$year}";
+        return $count + 1;
+    }
 
-        // Ensure uniqueness (bump seq on collision)
-        while (Contract::where('contract_number', $candidate)->exists()) {
-            $count++;
-            $seq = str_pad($count + 1, 3, '0', STR_PAD_LEFT);
-            $candidate = "{$prefix}-{$seq}/SLAB/{$roman}/{$year}";
-        }
+    private function buildContractNumber(string $prefix, int $sequence, string $romanMonth, int $year): string
+    {
+        $sequenceNumber = str_pad($sequence, 3, '0', STR_PAD_LEFT);
 
-        return $candidate;
+        return "{$prefix}-{$sequenceNumber}/SLAB/{$romanMonth}/{$year}";
     }
 
     /**
@@ -293,12 +339,13 @@ class ContractController extends Controller
                 'creator:id,name',
                 'signers.user',
                 'signers.reviews',
-                'signers.signatures', 
+                'signers.signatures',
                 'statusLogs.changedBy:id,name',
-                'addendums:id,contract_id,addendum_number,description,effective_date,created_at',
+                'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
                 'termination',
                 'parties.party.individualDetail:id,party_id,full_name',
                 'parties.party.companyDetail:id,party_id,company_name',
+                'versions.creator:id,name',
             ])->findOrFail($id);
 
             return response()->json([
@@ -335,21 +382,25 @@ class ContractController extends Controller
             }
 
             DB::transaction(function () use ($contract, $validated) {
-                $contract->update(Arr::except($validated, ['content', 'partner_id', 'signers']));
+                $contract->update(Arr::except($validated, ['content', 'field_values', 'partner_id', 'signers']));
 
                 // Update signers if provided
                 if (array_key_exists('signers', $validated) && is_array($validated['signers'])) {
-                    $existingSigners = \App\Models\ContractSigner::where('contract_id', $contract->id)->get();
+                    $existingSigners = ContractSigner::where('contract_id', $contract->id)->get();
                     $keptSignerIds = [];
 
                     foreach ($validated['signers'] as $index => $signerData) {
+                        if (empty(trim($signerData['name'] ?? ''))) {
+                            continue;
+                        }
+
                         $userId = null;
                         if ($signerData['type'] === 'internal') {
-                            $user = \App\Models\User::where('name', $signerData['name'])->first();
+                            $user = User::where('name', $signerData['name'])->first();
                             if ($user) $userId = $user->id;
                         }
 
-                        // Try to find an existing signer to preserve their review history
+
                         $existing = null;
                         if ($signerData['type'] === 'internal' && $userId) {
                             $existing = $existingSigners->where('signer_type', 'internal')->where('user_id', $userId)->first();
@@ -365,7 +416,7 @@ class ContractController extends Controller
                             ]);
                             $keptSignerIds[] = $existing->id;
                         } else {
-                            $newSigner = \App\Models\ContractSigner::create([
+                            $newSigner = ContractSigner::create([
                                 'contract_id' => $contract->id,
                                 'user_id' => $userId,
                                 'signer_type' => $signerData['type'],
@@ -379,7 +430,7 @@ class ContractController extends Controller
                     }
 
                     // Delete signers that are no longer part of the contract
-                    \App\Models\ContractSigner::where('contract_id', $contract->id)
+                    ContractSigner::where('contract_id', $contract->id)
                         ->whereNotIn('id', $keptSignerIds)
                         ->delete();
                 }
@@ -392,12 +443,12 @@ class ContractController extends Controller
                         $partnerId = (int) $validated['partner_id'];
                     } elseif (array_key_exists('partner_name', $validated) && $validated['partner_name']) {
                         $name = trim($validated['partner_name']);
-                        $existing = \App\Models\Party::whereHas('companyDetail', function ($q) use ($name) {
+                        $existing = Party::whereHas('companyDetail', function ($q) use ($name) {
                             $q->whereRaw('LOWER(company_name) = ?', [strtolower($name)]);
                         })->first();
                         if (!$existing) {
-                            $party = \App\Models\Party::create(['party_type' => 'company']);
-                            \App\Models\PartyCompanyDetail::create([
+                            $party = Party::create(['party_type' => 'company']);
+                            PartyCompanyDetail::create([
                                 'party_id' => $party->id,
                                 'company_name' => $name,
                                 'address' => null,
@@ -412,7 +463,7 @@ class ContractController extends Controller
                     if ($partnerId && $existingLink) {
                         $existingLink->update(['party_id' => $partnerId]);
                     } elseif ($partnerId && !$existingLink) {
-                        \App\Models\ContractParty::create([
+                        ContractParty::create([
                             'contract_id' => $contract->id,
                             'party_id' => $partnerId,
                             'party_order' => 2,
@@ -428,12 +479,22 @@ class ContractController extends Controller
 
                     // Create new version only if content changed
                     if (!$latestVersion || $latestVersion->content !== $validated['content']) {
-                        $nextVersion = ($latestVersion->version_number ?? 0) + 1;
-                        $contract->versions()->create([
-                            'version_number' => $nextVersion,
+                        $nextVersion = $contract->versions()->count() + 1;
+                        $version = $contract->versions()->create([
+                            'version_number' => 'V' . $nextVersion,
                             'content' => $validated['content'],
                             'created_by' => Auth::id(),
                         ]);
+
+                        if (!empty($validated['field_values']) && is_array($validated['field_values'])) {
+                            $version->fieldValues()->createMany($validated['field_values']);
+                        }
+                    } elseif ($latestVersion && array_key_exists('field_values', $validated)) {
+                        $latestVersion->fieldValues()->delete();
+
+                        if (!empty($validated['field_values']) && is_array($validated['field_values'])) {
+                            $latestVersion->fieldValues()->createMany($validated['field_values']);
+                        }
                     }
                 }
             });
@@ -444,10 +505,11 @@ class ContractController extends Controller
                 'signers.user',
                 'signers.reviews',
                 'statusLogs.changedBy:id,name',
-                'addendums:id,contract_id,addendum_number,description,effective_date,created_at',
+                'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
                 'termination',
                 'parties.party.individualDetail:id,party_id,full_name',
                 'parties.party.companyDetail:id,party_id,company_name',
+                'versions.creator:id,name',
             ]);
 
             return response()->json([
@@ -551,7 +613,7 @@ class ContractController extends Controller
             $hasInternal = $signers->where('signer_type', 'internal')->isNotEmpty();
             $hasExternal = $signers->where('signer_type', 'external')->isNotEmpty();
 
-            if (!$hasInternal || !$hasExternal) {
+            if (!$hasInternal) {
                 return response()->json([
                     'message' => 'Contract must have at least one internal and one external signer before submission',
                 ], 422);
@@ -566,11 +628,19 @@ class ContractController extends Controller
                         'user_id' => $signer->user_id,
                         'contract_id' => $contract->id,
                         'type' => 'review_requested',
-                        'message' => "Contract {$contract->contract_number} requires your review.",
+                        'message' => "{$contract->title} memerlukan peninjauan Anda.",
                         'is_read' => false,
                     ]);
                 }
             }
+
+            Notification::create([
+                'user_id'     => $contract->created_by,
+                'contract_id' => $contract->id,
+                'type'        => 'contract_submitted',
+                'message'     => "{$contract->title} berhasil diajukan dan sedang menunggu peninjauan.",
+                'is_read'     => false,
+            ]);
 
             return response()->json([
                 'message' => 'Contract submitted for review successfully',

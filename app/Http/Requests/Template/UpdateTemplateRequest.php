@@ -33,6 +33,7 @@ class UpdateTemplateRequest extends FormRequest
                 Rule::unique('templates', 'name')->ignore($templateId),
             ],
             'content'     => 'sometimes|required|string',
+            'paper_size'   => 'sometimes|in:a4,f4',
             'category_id' => 'sometimes|required|integer|exists:contract_categories,id',
             'is_active'   => 'sometimes|boolean',
         ];

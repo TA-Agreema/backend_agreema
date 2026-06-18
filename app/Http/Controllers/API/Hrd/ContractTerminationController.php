@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API\Hrd;
 use Exception;
 use App\Models\Contract;
 use App\Models\ContractTermination;
+use App\Models\Notification;
 use App\Http\Requests\Termination\StoreTerminationRequest;
 use App\Http\Resources\Termination\TerminationResource;
 use Illuminate\Http\Request;
@@ -13,6 +14,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
+
 
 class ContractTerminationController extends Controller
 {
@@ -62,9 +65,19 @@ class ContractTerminationController extends Controller
                 $documentPath = $request->file('document')->store('terminations', 'public');
             }
 
-            $termination = DB::transaction(function () use ($contract, $validated, $documentPath) {
-                // Update status kontrak menjadi terminated
-                $contract->update(['status' => 'terminated']);
+            $effectiveDate = \Carbon\Carbon::parse($validated['effective_date'])->startOfDay();
+            $today = \Carbon\Carbon::today();
+
+            $termination = DB::transaction(function () use ($contract, $validated, $documentPath, $effectiveDate, $today) {
+                $updateData = [
+                    'end_date' => $validated['effective_date'],
+                ];
+
+                if ($effectiveDate->lessThanOrEqualTo($today)) {
+                    $updateData['status'] = 'terminated';
+                }
+
+                $contract->update($updateData);
 
                 return ContractTermination::create([
                     'contract_id'               => $contract->id,
@@ -77,12 +90,51 @@ class ContractTerminationController extends Controller
                 ]);
             });
 
+            $startDate = $contract->start_date
+                ? $contract->start_date->locale('id')->isoFormat('D MMMM YYYY')
+                : '(belum ditentukan)';
+
+            // Notifikasi ke HRD
+            Notification::create([
+                'user_id'     => $contract->created_by,
+                'contract_id' => $contract->id,
+                'type'        => 'contract_terminated',
+                'message'     => "Terminasi {$contract->title} telah diajukan. Kontrak akan dihentikan pada tanggal {$startDate}.",
+                'is_read'     => false,
+            ]);
+
+            // Notifikasi ke manager (internal signer)
+            foreach ($contract->signers as $signer) {
+                if ($signer->signer_type === 'internal' && $signer->user_id) {
+                    Notification::create([
+                        'user_id'     => $signer->user_id,
+                        'contract_id' => $contract->id,
+                        'type'        => 'contract_terminated',
+                        'message'     => "Terminasi {$contract->title} telah diajukan. Kontrak akan dihentikan pada tanggal {$startDate}.",
+                        'is_read'     => false,
+                    ]);
+                }
+            }
+
+            $message = $effectiveDate->lessThanOrEqualTo($today)
+                ? 'Terminasi berhasil dibuat dan kontrak telah dihentikan.'
+                : 'Terminasi berhasil dibuat. Kontrak akan dihentikan pada tanggal efektif.';
+
             return response()->json([
-                'message' => 'Terminasi berhasil dibuat dan kontrak telah dihentikan.',
+                'message' => $message,
                 'data'    => new TerminationResource($termination),
             ], 201);
         } catch (ModelNotFoundException) {
             return response()->json(['message' => 'Kontrak tidak ditemukan.'], 404);
+        } catch (QueryException $e) {
+            if (str_contains($e->getMessage(), 'termination_number')) {
+                return response()->json([
+                    'message' => 'Nomor terminasi sudah digunakan. Silakan gunakan nomor lain.',
+                ], 422);
+            }
+
+            Log::error('Store termination error', ['contract_id' => $id, 'error' => $e->getMessage()]);
+            return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
         } catch (Exception $e) {
             Log::error('Store termination error', ['contract_id' => $id, 'error' => $e->getMessage()]);
             return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);

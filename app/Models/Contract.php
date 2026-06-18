@@ -13,7 +13,9 @@ class Contract extends Model
     protected $fillable = [
         'contract_number',
         'external_contract_number',
+        'contract_type',
         'title',
+        'paper_size',
         'start_date',
         'end_date',
         'status',
@@ -51,7 +53,7 @@ class Contract extends Model
 
     public function latestVersion(): HasOne
     {
-        return $this->hasOne(ContractVersion::class)->latestOfMany('version_number');
+        return $this->hasOne(ContractVersion::class)->latestOfMany('id');
     }
 
     public function signers(): HasMany

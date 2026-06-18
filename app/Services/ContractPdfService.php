@@ -56,7 +56,7 @@ class ContractPdfService
         ->setOption('defaultFont', 'DejaVu Sans');
 
         // Simpan ke storage
-        $safeNumber = preg_replace('/[\/\\\\ ]/', '_', $contract->contract_number ?? 'contract-' . $contract->id);
+        $safeNumber = preg_replace('/[\/\\\\ ]/', '_', $contract->title ?? 'contract-' . $contract->id);
         $filename   = "contracts/pdf/{$safeNumber}.pdf";
 
         Storage::disk('public')->put($filename, $pdf->output());
