@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API\Hrd;
 use Exception;
 use App\Models\Contract;
 use App\Models\ContractTermination;
+use App\Models\Notification;
 use App\Http\Requests\Termination\StoreTerminationRequest;
 use App\Http\Resources\Termination\TerminationResource;
 use Illuminate\Http\Request;
@@ -13,6 +14,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
+
 
 class ContractTerminationController extends Controller
 {
@@ -76,7 +79,7 @@ class ContractTerminationController extends Controller
 
                 $contract->update($updateData);
 
-                return ContractTermination::create([
+                $termination = ContractTermination::create([
                     'contract_id'               => $contract->id,
                     'termination_number'        => $validated['termination_number'],
                     'title'                     => $validated['title'],
@@ -85,7 +88,104 @@ class ContractTerminationController extends Controller
                     'termination_document_path' => $documentPath,
                     'effective_date'            => $validated['effective_date'],
                 ]);
+
+                $reasonLabels = [
+                    'mutual_agreement'   => 'Kesepakatan Bersama',
+                    'breach_of_contract' => 'Pelanggaran Kontrak',
+                    'force_majeure'      => 'Force Majeure',
+                    'expiration'         => 'Berakhirnya Masa Kontrak',
+                    'other'              => 'Lainnya',
+                ];
+
+                $reasonLabel = $reasonLabels[$validated['termination_reason']] ?? $validated['termination_reason'];
+                $effectiveDate = \Carbon\Carbon::parse($validated['effective_date'])
+                    ->locale('id')->isoFormat('D MMMM YYYY');
+
+                // Notifikasi HRD
+                Notification::create([
+                    'user_id'     => $contract->created_by,
+                    'contract_id' => $contract->id,
+                    'type'        => 'contract_terminating',
+                    'message'     => "Pengajuan terminasi {$contract->title} berhasil. Kontrak akan dihentikan pada {$effectiveDate}. Alasan: {$reasonLabel}.",
+                    'is_read'     => false,
+                ]);
+
+                // Notifikasi ke manager
+                $contract->loadMissing('signers.user');
+                foreach ($contract->signers as $signer) {
+                    if ($signer->signer_type === 'internal' && $signer->user_id) {
+                        Notification::create([
+                            'user_id'     => $signer->user_id,
+                            'contract_id' => $contract->id,
+                            'type'        => 'contract_terminating',
+                            'message'     => "{$contract->title} akan dihentikan pada {$effectiveDate}. Alasan: {$reasonLabel}.",
+                            'is_read'     => false,
+                        ]);
+                    }
+                }
+
+                return $termination;
             });
+
+            $message = $effectiveDate->lessThanOrEqualTo($today)
+                ? 'Terminasi berhasil dibuat dan kontrak telah dihentikan.'
+                : 'Terminasi berhasil dibuat. Kontrak akan dihentikan pada tanggal efektif.';
+
+            $startDate = $contract->start_date
+                ? $contract->start_date->locale('id')->isoFormat('D MMMM YYYY')
+                : '(belum ditentukan)';
+
+            // Notifikasi ke HRD
+            Notification::create([
+                'user_id'     => $contract->created_by,
+                'contract_id' => $contract->id,
+                'type'        => 'contract_terminated',
+                'message'     => "Terminasi {$contract->title} telah diajukan. Kontrak akan dihentikan pada tanggal {$startDate}.",
+                'is_read'     => false,
+            ]);
+
+            // Notifikasi ke manager (internal signer)
+            foreach ($contract->signers as $signer) {
+                if ($signer->signer_type === 'internal' && $signer->user_id) {
+                    Notification::create([
+                        'user_id'     => $signer->user_id,
+                        'contract_id' => $contract->id,
+                        'type'        => 'contract_terminated',
+                        'message'     => "Terminasi {$contract->title} telah diajukan. Kontrak akan dihentikan pada tanggal {$startDate}.",
+                        'is_read'     => false,
+                    ]);
+                }
+            }
+
+            $message = $effectiveDate->lessThanOrEqualTo($today)
+                ? 'Terminasi berhasil dibuat dan kontrak telah dihentikan.'
+                : 'Terminasi berhasil dibuat. Kontrak akan dihentikan pada tanggal efektif.';
+
+            $startDate = $contract->start_date
+                ? $contract->start_date->locale('id')->isoFormat('D MMMM YYYY')
+                : '(belum ditentukan)';
+
+            // Notifikasi ke HRD
+            Notification::create([
+                'user_id'     => $contract->created_by,
+                'contract_id' => $contract->id,
+                'type'        => 'contract_terminated',
+                'message'     => "Terminasi {$contract->title} telah diajukan. Kontrak akan dihentikan pada tanggal {$startDate}.",
+                'is_read'     => false,
+            ]);
+
+            // Notifikasi ke manager (internal signer)
+            foreach ($contract->signers as $signer) {
+                if ($signer->signer_type === 'internal' && $signer->user_id) {
+                    Notification::create([
+                        'user_id'     => $signer->user_id,
+                        'contract_id' => $contract->id,
+                        'type'        => 'contract_terminated',
+                        'message'     => "Terminasi {$contract->title} telah diajukan. Kontrak akan dihentikan pada tanggal {$startDate}.",
+                        'is_read'     => false,
+                    ]);
+                }
+            }
 
             $message = $effectiveDate->lessThanOrEqualTo($today)
                 ? 'Terminasi berhasil dibuat dan kontrak telah dihentikan.'
@@ -97,6 +197,15 @@ class ContractTerminationController extends Controller
             ], 201);
         } catch (ModelNotFoundException) {
             return response()->json(['message' => 'Kontrak tidak ditemukan.'], 404);
+        } catch (QueryException $e) {
+            if (str_contains($e->getMessage(), 'termination_number')) {
+                return response()->json([
+                    'message' => 'Nomor terminasi sudah digunakan. Silakan gunakan nomor lain.',
+                ], 422);
+            }
+
+            Log::error('Store termination error', ['contract_id' => $id, 'error' => $e->getMessage()]);
+            return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
         } catch (Exception $e) {
             Log::error('Store termination error', ['contract_id' => $id, 'error' => $e->getMessage()]);
             return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);

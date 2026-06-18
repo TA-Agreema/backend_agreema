@@ -276,8 +276,6 @@
                     @if(isset($signatureImages[$signer->id]))
                         {{-- Gambar TTD di-embed sebagai base64 --}}
                         <img src="{{ $signatureImages[$signer->id] }}" alt="Tanda tangan">
-                    @else
-                        <span class="unsigned">Belum ditandatangani</span>
                     @endif
                 </div>
                 <p class="signer-name">

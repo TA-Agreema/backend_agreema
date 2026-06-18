@@ -47,6 +47,9 @@ class ContractController extends Controller
                 ])
                 ->orderByDesc('created_at');
 
+            // hanya menampilkan kontrak internal
+            $query->where('contract_type', 'internal');
+
             // filter berdasarkan parameter 'archive'
             if ($request->boolean('archive')) {
                 // Halaman arsip: hanya tampilkan rejected, terminated, & expired
@@ -684,7 +687,7 @@ class ContractController extends Controller
             $hasInternal = $signers->where('signer_type', 'internal')->isNotEmpty();
             $hasExternal = $signers->where('signer_type', 'external')->isNotEmpty();
 
-            if (!$hasInternal || !$hasExternal) {
+            if (!$hasInternal) {
                 return response()->json([
                     'message' => 'Contract must have at least one internal and one external signer before submission',
                 ], 422);
@@ -715,11 +718,19 @@ class ContractController extends Controller
                         'user_id' => $signer->user_id,
                         'contract_id' => $contract->id,
                         'type' => 'review_requested',
-                        'message' => "Contract {$contract->contract_number} requires your review.",
+                        'message' => "{$contract->title} memerlukan peninjauan Anda.",
                         'is_read' => false,
                     ]);
                 }
             }
+
+            Notification::create([
+                'user_id'     => $contract->created_by,
+                'contract_id' => $contract->id,
+                'type'        => 'contract_submitted',
+                'message'     => "{$contract->title} berhasil diajukan dan sedang menunggu peninjauan.",
+                'is_read'     => false,
+            ]);
 
             return response()->json([
                 'message' => 'Contract submitted for review successfully',

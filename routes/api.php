@@ -15,6 +15,8 @@ use App\Http\Controllers\API\Hrd\ContractTerminationController;
 use App\Http\Controllers\API\Manager\ContractReviewController;
 use App\Http\Controllers\API\External\ExternalContractController;
 use App\Http\Controllers\API\DashboardController;
+use App\Http\Controllers\API\NotificationController;
+use App\Http\Controllers\API\Hrd\ExternalPartnerContractController;
 
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -115,5 +117,20 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [FieldDefinitionController::class, 'store']);
         Route::patch('/{id}', [FieldDefinitionController::class, 'update']);
         Route::delete('/{id}', [FieldDefinitionController::class, 'destroy']);
+    });
+
+    // Notifications
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [NotificationController::class, 'index']);
+        Route::patch('/read-all', [NotificationController::class, 'markAllRead']);
+        Route::patch('/{id}/read', [NotificationController::class, 'markRead']);
+        Route::delete('/{id}', [NotificationController::class, 'destroy']);
+    });
+
+    // Kontrak Mitra (Eksternal)
+    Route::prefix('partner-contracts')->middleware('permission:read.contracts')->group(function () {
+        Route::get('/', [ExternalPartnerContractController::class, 'index']);
+        Route::post('/', [ExternalPartnerContractController::class, 'store'])->middleware('permission:create.contract');
+        Route::delete('/{id}', [ExternalPartnerContractController::class, 'destroy'])->middleware('permission:delete.contract');
     });
 });
