@@ -690,6 +690,22 @@ class ContractController extends Controller
                 ], 422);
             }
 
+            $invalidExternalSigner = $signers->first(function ($signer) {
+                return $signer->signer_type === 'external'
+                    && (
+                        blank($signer->signer_name)
+                        || blank($signer->signer_role)
+                        || blank($signer->external_email)
+                        || !filter_var($signer->external_email, FILTER_VALIDATE_EMAIL)
+                    );
+            });
+
+            if ($invalidExternalSigner) {
+                return response()->json([
+                    'message' => 'External signer must have a valid name, role, and email before submission',
+                ], 422);
+            }
+
             $contract->update(['status' => 'review']);
 
             // Notify signers (Manager)
