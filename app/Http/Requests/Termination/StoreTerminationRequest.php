@@ -27,7 +27,7 @@ class StoreTerminationRequest extends FormRequest
             'termination_reason' => 'required|string|max:5000',
             'termination_note' => 'nullable|string|max:5000',
             'document' => 'nullable|file|mimes:pdf|max:10240',
-            'effective_date' => 'required|date|after_or_equal:today',
+            'effective_date' => 'required|date',
         ];
     }
 }
