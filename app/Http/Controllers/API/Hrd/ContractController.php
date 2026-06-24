@@ -13,6 +13,7 @@ use App\Models\Notification;
 use Illuminate\Http\Request;
 use App\Models\ContractParty;
 use App\Models\ContractSigner;
+use App\Models\FieldDefinition;
 use App\Models\ContractCategory;
 use Illuminate\Http\JsonResponse;
 use App\Models\PartyCompanyDetail;
@@ -709,6 +710,13 @@ class ContractController extends Controller
                 ], 422);
             }
 
+            $missingRequiredFields = $this->getMissingRequiredContractFields($contract);
+            if (!empty($missingRequiredFields)) {
+                return response()->json([
+                    'message' => 'Field wajib belum diisi: ' . implode(', ', $missingRequiredFields) . '.',
+                ], 422);
+            }
+
             $contract->update(['status' => 'review']);
 
             // Notify signers (Manager)
@@ -769,5 +777,75 @@ class ContractController extends Controller
         }
 
         return array_values($normalized);
+    }
+
+    private function getMissingRequiredContractFields(Contract $contract): array
+    {
+        $latestVersion = $contract->latestVersion()
+            ->with('fieldValues.fieldDefinition')
+            ->first();
+
+        if (!$latestVersion) {
+            return [];
+        }
+
+        $content = $latestVersion->content ?? '';
+        $usedFieldIds = $this->extractUsedFieldIdsFromContent($content);
+        $fieldValuesById = $latestVersion->fieldValues->keyBy('field_definition_id');
+
+        foreach ($fieldValuesById->keys() as $fieldDefinitionId) {
+            $usedFieldIds[] = (int) $fieldDefinitionId;
+        }
+
+        $usedFieldIds = array_values(array_unique(array_filter($usedFieldIds)));
+        if (empty($usedFieldIds)) {
+            return [];
+        }
+
+        $requiredFields = FieldDefinition::query()
+            ->whereIn('id', $usedFieldIds)
+            ->where('is_required', true)
+            ->get();
+
+        return $requiredFields
+            ->filter(function (FieldDefinition $field) use ($fieldValuesById) {
+                $fieldValue = $fieldValuesById->get($field->id);
+
+                return !$fieldValue ||
+                    $this->isMissingRequiredFieldValue($fieldValue->value, $field);
+            })
+            ->pluck('field_label')
+            ->values()
+            ->all();
+    }
+
+    private function extractUsedFieldIdsFromContent(string $content): array
+    {
+        preg_match_all('/data-contract-field-id=["\'](\d+)["\']/', $content, $idMatches);
+        $fieldIds = array_map('intval', $idMatches[1] ?? []);
+
+        preg_match_all('/{{\s*([a-zA-Z0-9_]+)\s*}}/', $content, $keyMatches);
+        $fieldKeys = array_unique($keyMatches[1] ?? []);
+
+        if (!empty($fieldKeys)) {
+            $keyFieldIds = FieldDefinition::query()
+                ->whereIn('field_key', $fieldKeys)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            $fieldIds = array_merge($fieldIds, $keyFieldIds);
+        }
+
+        return array_values(array_unique($fieldIds));
+    }
+
+    private function isMissingRequiredFieldValue(?string $value, FieldDefinition $field): bool
+    {
+        $trimmed = trim((string) $value);
+
+        return $trimmed === '' ||
+            strcasecmp($trimmed, '[' . $field->field_label . ']') === 0 ||
+            preg_match('/^{{\s*' . preg_quote($field->field_key, '/') . '\s*}}$/i', $trimmed);
     }
 }
