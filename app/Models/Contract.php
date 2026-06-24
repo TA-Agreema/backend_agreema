@@ -20,6 +20,7 @@ class Contract extends Model
         'end_date',
         'status',
         'template_id',
+        'category_id',
         'created_by',
         'signed_document_path',
     ];
@@ -34,6 +35,11 @@ class Contract extends Model
     public function template(): BelongsTo
     {
         return $this->belongsTo(Template::class, 'template_id');
+    }
+
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(ContractCategory::class, 'category_id');
     }
 
     public function creator(): BelongsTo

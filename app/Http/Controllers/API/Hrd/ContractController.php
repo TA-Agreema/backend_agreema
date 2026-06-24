@@ -47,8 +47,12 @@ class ContractController extends Controller
                 ])
                 ->orderByDesc('created_at');
 
-            // hanya menampilkan kontrak internal
-            $query->where('contract_type', 'internal');
+            // Secara default hanya menampilkan kontrak internal.
+            // Jika parameter include_external=1 dikirim (dipakai halaman Aktif/Arsip),
+            // tampilkan juga kontrak mitra (contract_type = 'external').
+            if (!$request->boolean('include_external')) {
+                $query->where('contract_type', 'internal');
+            };
 
             // filter berdasarkan parameter 'archive'
             if ($request->boolean('archive')) {
