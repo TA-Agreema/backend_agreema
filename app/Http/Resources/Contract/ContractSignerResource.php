@@ -9,8 +9,8 @@ class ContractSignerResource extends JsonResource
 {
     public function toArray($request): array
     {
-        $latestSignature = $s->relationLoaded('signatures')
-            ? $s->signatures->sortByDesc('iteration')->first()
+        $latestSignature = $this->relationLoaded('signatures')
+            ? $this->signatures->filter(fn($s) => ($s->iteration ?? 1) > 0)->sortByDesc('iteration')->first()
             : null;
 
         return [
@@ -28,6 +28,19 @@ class ContractSignerResource extends JsonResource
                 'email'     => $this->user->email,
                 'job_title' => $this->user->job_title,
             ]),
+
+            // All signatures (for frontend to show each signer's TTD)
+            'signatures' => $this->whenLoaded('signatures', fn() =>
+                $this->signatures->map(fn($sig) => [
+                    'id'             => $sig->id,
+                    'iteration'      => $sig->iteration,
+                    'signature_type' => $sig->signature_type,
+                    'signature_path' => $sig->signature_path
+                        ? Storage::disk('public')->url($sig->signature_path)
+                        : null,
+                    'signed_at'      => $sig->signed_at?->toDateTimeString(),
+                ])->values()
+            ),
 
             'signature_image' => $latestSignature?->signature_path
                 ? Storage::disk('public')->url($latestSignature->signature_path)

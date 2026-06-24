@@ -92,13 +92,17 @@ class ExternalContractController extends Controller
     public function review(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'token'  => 'required|string',
-            'status' => 'required|in:approved,revised,confirmed',
-            'notes'  => 'nullable|string|max:2000',
+            'token'           => 'required|string',
+            'status'          => 'required|in:approved,revised,confirmed',
+            'notes'           => 'nullable|string|max:2000',
+            'review_document' => 'nullable|file|mimes:pdf,doc,docx|max:10240',
         ]);
 
-        if ($validated['status'] === 'revised' && empty($validated['notes'])) {
-            return response()->json(['message' => 'Notes wajib diisi saat meminta revisi.'], 422);
+        $notes = $validated['notes'] ?? null;
+        $hasFile = $request->hasFile('review_document');
+
+        if ($validated['status'] === 'revised' && !$hasFile && empty($notes)) {
+            return response()->json(['message' => 'Catatan atau dokumen revisi wajib diisi saat meminta revisi.'], 422);
         }
 
         try {
@@ -134,16 +138,24 @@ class ExternalContractController extends Controller
                 return response()->json(['message' => 'Kontrak tidak memiliki versi konten.'], 422);
             }
 
+            // Simpan file dokumen revisi (jika ada)
+            $reviewDocumentPath = null;
+            if ($hasFile) {
+                $reviewDocumentPath = $request->file('review_document')
+                    ->store('review-documents', 'public');
+            }
+
             // Handle confirmed (upload manual — eksternal hanya konfirmasi tanpa TTD)
             if ($validated['status'] === 'confirmed') {
-                DB::transaction(function () use ($contract, $signer, $tokenRecord, $latestVersion, $validated) {
+                DB::transaction(function () use ($contract, $signer, $tokenRecord, $latestVersion, $validated, $reviewDocumentPath, $notes) {
                     ContractSignerReview::create([
-                        'contract_signer_id'  => $signer->id,
-                        'contract_version_id' => $latestVersion->id,
-                        'iteration'           => $tokenRecord->iteration,
-                        'status'              => 'approved',
-                        'notes'               => $validated['notes'] ?? null,
-                        'reviewed_at'         => now(),
+                        'contract_signer_id'   => $signer->id,
+                        'contract_version_id'  => $latestVersion->id,
+                        'iteration'            => $tokenRecord->iteration,
+                        'status'               => 'approved',
+                        'notes'                => $notes,
+                        'review_document_path' => $reviewDocumentPath,
+                        'reviewed_at'          => now(),
                     ]);
 
                     $tokenRecord->update([
@@ -220,20 +232,21 @@ class ExternalContractController extends Controller
                     return response()->json(['message' => 'Kontrak berhasil disetujui dan kini aktif.']);
                 }
 
-                DB::transaction(function () use ($contract, $signer, $tokenRecord, $latestVersion, $validated) {
+                DB::transaction(function () use ($contract, $signer, $tokenRecord, $latestVersion, $validated, $reviewDocumentPath, $notes) {
                     ContractSignerReview::create([
-                        'contract_signer_id'  => $signer->id,
-                        'contract_version_id' => $latestVersion->id,
-                        'iteration'           => $tokenRecord->iteration,
-                        'status'              => $validated['status'],
-                        'notes'               => $validated['notes'] ?? null,
-                        'reviewed_at'         => now(),
+                        'contract_signer_id'   => $signer->id,
+                        'contract_version_id'  => $latestVersion->id,
+                        'iteration'            => $tokenRecord->iteration,
+                        'status'               => $validated['status'],
+                        'notes'                => $notes,
+                        'review_document_path' => $reviewDocumentPath,
+                        'reviewed_at'          => now(),
                     ]);
 
                     $tokenRecord->update([
                         'used_at'       => now(),
                         'review_status' => $validated['status'],
-                        'review_notes'  => $validated['notes'] ?? null,
+                        'review_notes'  => $notes,
                     ]);
 
                     if ($validated['status'] === 'approved') {
@@ -292,7 +305,7 @@ class ExternalContractController extends Controller
                             'user_id'     => $contract->created_by,
                             'contract_id' => $contract->id,
                             'type'        => 'external_revision_requested',
-                            'message'     => "Pihak kedua meminta revisi {$contract->title}. Alasan: {$validated['notes']}",
+                            'message'     => "Pihak kedua meminta revisi {$contract->title}. Alasan: {$notes}",
                             'is_read'     => false,
                         ]);
 
@@ -303,7 +316,7 @@ class ExternalContractController extends Controller
                                     'user_id'     => $signer->user_id,
                                     'contract_id' => $contract->id,
                                     'type'        => 'external_revision_requested',
-                                    'message'     => "{$contract->title} memiliki revisi dari pihak kedua. Alasan: {$validated['notes']}",
+                                    'message'     => "{$contract->title} memiliki revisi dari pihak kedua. Alasan: {$notes}",
                                     'is_read'     => false,
                                 ]);
                             }

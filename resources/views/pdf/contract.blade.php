@@ -5,6 +5,7 @@
 @endphp
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
     <meta charset="UTF-8" />
     <title>{{ $contract->title }}</title>
@@ -69,14 +70,33 @@
             line-height: 1.35;
         }
 
-        .contract-body h1 { font-size: 1.5em; }
-        .contract-body h2 { font-size: 1.25em; }
-        .contract-body h3 { font-size: 1.1em; }
+        .contract-body h1 {
+            font-size: 1.5em;
+        }
 
-        .contract-body strong { font-weight: 700; }
-        .contract-body em { font-style: italic; }
-        .contract-body u { text-decoration: underline; }
-        .contract-body s { text-decoration: line-through; }
+        .contract-body h2 {
+            font-size: 1.25em;
+        }
+
+        .contract-body h3 {
+            font-size: 1.1em;
+        }
+
+        .contract-body strong {
+            font-weight: 700;
+        }
+
+        .contract-body em {
+            font-style: italic;
+        }
+
+        .contract-body u {
+            text-decoration: underline;
+        }
+
+        .contract-body s {
+            text-decoration: line-through;
+        }
 
         .contract-body ul,
         .contract-body ol {
@@ -88,10 +108,21 @@
             margin: 0.2em 0;
         }
 
-        .contract-body [style*="text-align: center"] { text-align: center; }
-        .contract-body [style*="text-align: right"] { text-align: right; }
-        .contract-body [style*="text-align: left"] { text-align: left; }
-        .contract-body [style*="text-align: justify"] { text-align: justify; }
+        .contract-body [style*="text-align: center"] {
+            text-align: center;
+        }
+
+        .contract-body [style*="text-align: right"] {
+            text-align: right;
+        }
+
+        .contract-body [style*="text-align: left"] {
+            text-align: left;
+        }
+
+        .contract-body [style*="text-align: justify"] {
+            text-align: justify;
+        }
 
         .contract-body img {
             max-width: 100%;
@@ -168,13 +199,24 @@
         }
 
         .contract-body table td[data-border-top="none"],
-        .contract-body table th[data-border-top="none"] { border-top: none !important; }
+        .contract-body table th[data-border-top="none"] {
+            border-top: none !important;
+        }
+
         .contract-body table td[data-border-right="none"],
-        .contract-body table th[data-border-right="none"] { border-right: none !important; }
+        .contract-body table th[data-border-right="none"] {
+            border-right: none !important;
+        }
+
         .contract-body table td[data-border-bottom="none"],
-        .contract-body table th[data-border-bottom="none"] { border-bottom: none !important; }
+        .contract-body table th[data-border-bottom="none"] {
+            border-bottom: none !important;
+        }
+
         .contract-body table td[data-border-left="none"],
-        .contract-body table th[data-border-left="none"] { border-left: none !important; }
+        .contract-body table th[data-border-left="none"] {
+            border-left: none !important;
+        }
 
         .contract-body .page-break {
             page-break-after: always;
@@ -252,12 +294,11 @@
         }
     </style>
 </head>
+
 <body>
-    @if($watermark)
-        <div
-            class="document-watermark"
-            style="width: {{ $watermark['size'] }}%; opacity: {{ $watermark['opacity'] }}; transform: translate(-50%, -50%) rotate({{ $watermark['rotation'] }}deg); -webkit-transform: translate(-50%, -50%) rotate({{ $watermark['rotation'] }}deg);"
-        >
+    @if ($watermark)
+        <div class="document-watermark"
+            style="width: {{ $watermark['size'] }}%; opacity: {{ $watermark['opacity'] }}; transform: translate(-50%, -50%) rotate({{ $watermark['rotation'] }}deg); -webkit-transform: translate(-50%, -50%) rotate({{ $watermark['rotation'] }}deg);">
             <img src="{{ $watermark['src'] }}" alt="">
         </div>
     @endif
@@ -266,39 +307,35 @@
         {!! $renderedContent !!}
     </div>
 
-    @if($contract->signers && $contract->signers->count() > 0)
-    <div class="signature-section">
-        <p class="signature-title">Tanda Tangan</p>
-        <div class="signature-grid">
-            @foreach($contract->signers as $signer)
-            <div class="signature-item">
-                <div class="signature-box">
-                    @if(isset($signatureImages[$signer->id]))
-                        {{-- Gambar TTD di-embed sebagai base64 --}}
-                        <img src="{{ $signatureImages[$signer->id] }}" alt="Tanda tangan">
-                    @endif
-                </div>
-                <p class="signer-name">
-                    {{ $signer->signer_type === 'internal'
-                        ? ($signer->user?->name ?? '-')
-                        : ($signer->signer_name ?? '-') }}
-                </p>
-                <p class="signer-role">
-                    {{ $signer->signer_type === 'internal'
-                        ? ($signer->user?->job_title ?? '')
-                        : ($signer->signer_role ?? '') }}
-                </p>
-                @if($signer->signer_type === 'external' && $signer->external_email)
+    @if ($contract->signers && $contract->signers->count() > 0)
+        <div class="signature-section">
+            <p class="signature-title">Tanda Tangan</p>
+            <div class="signature-grid">
+                @foreach ($contract->signers as $signer)
+                    <div class="signature-item">
+                        <div class="signature-box">
+                            @if (isset($signatureImages[$signer->id]))
+                                {{-- Gambar TTD di-embed sebagai base64 --}}
+                                <img src="{{ $signatureImages[$signer->id] }}" alt="Tanda tangan">
+                            @endif
+                        </div>
+                        <p class="signer-name">
+                            {{ $signer->signer_type === 'internal' ? $signer->user?->name ?? '-' : $signer->signer_name ?? '-' }}
+                        </p>
+                        <p class="signer-role">
+                            {{ $signer->signer_type === 'internal' ? $signer->user?->job_title ?? '' : $signer->signer_role ?? '' }}
+                        </p>
+                        {{-- @if ($signer->signer_type === 'external' && $signer->external_email)
                     <p class="signer-email">{{ $signer->external_email }}</p>
-                @endif
-                @if(isset($signatureDates[$signer->id]))
-                    <p class="signer-date">{{ $signatureDates[$signer->id] }}</p>
-                @endif
+                @endif --}}
+                        @if (isset($signatureDates[$signer->id]))
+                            <p class="signer-date">{{ $signatureDates[$signer->id] }}</p>
+                        @endif
+                    </div>
+                @endforeach
             </div>
-            @endforeach
         </div>
-    </div>
     @endif
 </body>
-</html>
 
+</html>

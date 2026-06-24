@@ -157,12 +157,17 @@ class ContractReviewController extends Controller
     public function review(Request $request, int $id): JsonResponse
     {
         $validated = $request->validate([
-            'status' => 'required|in:approved,revised,rejected',
-            'notes' => 'nullable|string|max:2000',
+            'status'          => 'required|in:approved,revised,rejected',
+            'notes'           => 'nullable|string|max:2000',
+            'review_document' => 'nullable|file|mimes:pdf,doc,docx|max:10240',
         ]);
 
-        if (in_array($validated['status'], ['revised', 'rejected']) && empty($validated['notes'])) {
-            return response()->json(['message' => 'Notes is required for revision or rejection.'], 422);
+        $notes = $validated['notes'] ?? null;
+        $hasFile = $request->hasFile('review_document');
+
+        // Notes wajib diisi saat revisi/tolak HANYA jika tidak ada file yang dilampirkan
+        if (in_array($validated['status'], ['revised', 'rejected']) && !$hasFile && empty($notes)) {
+            return response()->json(['message' => 'Catatan atau dokumen revisi wajib diisi saat meminta revisi / penolakan.'], 422);
         }
 
         try {
@@ -182,19 +187,27 @@ class ContractReviewController extends Controller
                 return response()->json(['message' => 'Contract has no content to review.'], 422);
             }
 
+            // Simpan file dokumen revisi (jika ada)
+            $reviewDocumentPath = null;
+            if ($hasFile) {
+                $reviewDocumentPath = $request->file('review_document')
+                    ->store('review-documents', 'public');
+            }
+
             // Hitung iterasi berikutnya untuk signer ini
             $iteration = ContractSignerReview::where('contract_signer_id', $signer->id)->max('iteration') ?? 0;
             $iteration++;
 
-            DB::transaction(function () use ($contract, $signer, $latestVersion, $validated, $iteration, $user) {
+            DB::transaction(function () use ($contract, $signer, $latestVersion, $validated, $iteration, $user, $reviewDocumentPath, $notes) {
                 // Catat review ke tabel contract_signer_reviews
                 ContractSignerReview::create([
-                    'contract_signer_id' => $signer->id,
-                    'contract_version_id' => $latestVersion->id,
-                    'iteration' => $iteration,
-                    'status' => $validated['status'],
-                    'notes' => $validated['notes'] ?? null,
-                    'reviewed_at' => now(),
+                    'contract_signer_id'   => $signer->id,
+                    'contract_version_id'  => $latestVersion->id,
+                    'iteration'            => $iteration,
+                    'status'               => $validated['status'],
+                    'notes'                => $notes,
+                    'review_document_path' => $reviewDocumentPath,
+                    'reviewed_at'          => now(),
                 ]);
 
                 if ($validated['status'] === 'approved') {
@@ -280,14 +293,14 @@ class ContractReviewController extends Controller
                     $contract->update(['status' => 'rejected']);
 
                     // Kirim email penolakan ke external
-                    $this->dispatchExternalRejectionEmails($contract, $validated['notes']);
+                    $this->dispatchExternalRejectionEmails($contract, $notes);
 
                     // Notifikasi ke HRD
                     Notification::create([
                         'user_id' => $contract->created_by,
                         'contract_id' => $contract->id,
                         'type'        => 'manager_rejected',
-                        'message'     => "Manager telah menolak kontrak {$contract->contract_number}. Alasan: {$validated['notes']}",
+                        'message'     => "Manager telah menolak kontrak {$contract->contract_number}. Alasan: {$notes}",
                         'is_read'     => false,
                     ]);
                 } else {
@@ -299,7 +312,7 @@ class ContractReviewController extends Controller
                         'user_id' => $contract->created_by,
                         'contract_id' => $contract->id,
                         'type'        => 'manager_revision_requested',
-                        'message'     => "Manager meminta revisi untuk kontrak {$contract->contract_number}: {$validated['notes']}",
+                        'message'     => "Manager meminta revisi untuk kontrak {$contract->contract_number}: {$notes}",
                         'is_read'     => false,
                     ]);
                 }

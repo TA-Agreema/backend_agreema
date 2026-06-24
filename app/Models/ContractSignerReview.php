@@ -13,6 +13,7 @@ class ContractSignerReview extends Model
         'iteration',
         'status',
         'notes',
+        'review_document_path',
         'reviewed_at',
     ];
 

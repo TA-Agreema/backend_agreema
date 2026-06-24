@@ -133,6 +133,9 @@ class ContractResource extends JsonResource
                                 'status' => $r->status,
                                 'notes' => $r->notes,
                                 'reviewed_at' => $r->reviewed_at?->format('d M Y, H:i'),
+                                'review_document_url' => $r->review_document_path
+                                    ? asset('storage/' . ltrim($r->review_document_path, '/'))
+                                    : null,
                             ];
                         })->values() : [],
                     ];
