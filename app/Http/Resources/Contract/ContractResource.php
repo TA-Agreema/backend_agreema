@@ -27,11 +27,12 @@ class ContractResource extends JsonResource
         return [
             'id' => $this->id,
             'contract_number' => $this->contract_number,
+            'contract_type' => $this->contract_type,
             'external_contract_number' => $this->external_contract_number,
             'title' => $this->title,
             'paper_size' => $this->paper_size ?? $this->template?->paper_size ?? 'f4',
             'partner' => $partnerParty,
-            'category' => $this->template?->category?->name ?? ($this->category_id ? 'Kategori' : '-'),
+            'category' => $this->resolveCategory(),
             'category_id' => $this->category_id ?? $this->template?->category_id,
             'template_id' => $this->template_id,
             'partner_id' => $this->parties?->firstWhere('party_order', 2)?->party_id ?? null,
@@ -40,10 +41,9 @@ class ContractResource extends JsonResource
             'start_date' => $this->start_date?->format('d-m-Y'),
             'end_date' => $this->end_date?->format('d-m-Y'),
             'created_by' => $this->creator?->name ?? '-',
+            'uploaded_by' => $this->contract_type === 'external' ? ($this->creator?->name ?? '-') : null,
             'sign_method' => $lastInternalSignature?->signature_type ?? null,
-            'signed_document_url' => ($this->signed_document_path && $lastInternalSignature?->signature_type === 'upload')
-                ? asset('storage/' . $this->signed_document_path)
-                : null,
+            'signed_document_url' => $this->resolveSignedDocumentUrl($lastInternalSignature),
             'addendums' => $this->addendums
                 ->map(function ($addendum) {
                     $title = $addendum->title
@@ -163,6 +163,38 @@ class ContractResource extends JsonResource
             }),
 
         ];
+    }
+
+    private function resolveSignedDocumentUrl($lastInternalSignature): ?string
+    {
+        if (!$this->signed_document_path) {
+            return null;
+        }
+
+        // Kontrak mitra: dokumen yang diupload HRD selalu dianggap dokumen final
+        if ($this->contract_type === 'external') {
+            return asset('storage/' . $this->signed_document_path);
+        }
+
+        // Kontrak internal: hanya jika signer terakhir upload manual
+        if ($lastInternalSignature?->signature_type === 'upload') {
+            return asset('storage/' . $this->signed_document_path);
+        }
+
+        return null;
+    }
+
+    private function resolveCategory(): string
+    {
+        if ($this->template?->category?->name) {
+            return $this->template->category->name;
+        }
+
+        if ($this->contract_type === 'external') {
+            return 'Kontrak Mitra';
+        }
+
+        return $this->category_id ? 'Kategori' : '-';
     }
 
     private function resolvePartner(): string
