@@ -19,6 +19,8 @@ use App\Http\Controllers\API\NotificationController;
 use App\Http\Controllers\API\Hrd\ExternalPartnerContractController;
 
 Route::post('/login', [AuthController::class, 'login']);
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
 // External Routes (No auth required)
 Route::prefix('external/contracts')->group(function () {

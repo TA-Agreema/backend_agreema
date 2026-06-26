@@ -11,7 +11,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 
 class ExternalPartnerContractController extends Controller
 {
@@ -19,8 +18,6 @@ class ExternalPartnerContractController extends Controller
     {
         $contracts = Contract::where('contract_type', 'external')
             ->with([
-                'parties.party.companyDetail',
-                'parties.party.individualDetail',
                 'creator',
                 'termination',
                 'addendums',
@@ -55,6 +52,7 @@ class ExternalPartnerContractController extends Controller
                     'external_contract_number' => $validated['external_contract_number'] ?? null,
                     'contract_type'            => 'external',
                     'title'                    => $validated['title'],
+                    'partner_name'             => $validated['partner_name'],
                     'start_date'               => $validated['start_date'] ?? null,
                     'end_date'                 => $validated['end_date'] ?? null,
                     'status'                   => $validated['status'],
@@ -62,23 +60,6 @@ class ExternalPartnerContractController extends Controller
                     'created_by'               => Auth::id(),
                 ]);
 
-                // Buat record Party (tipe company) untuk mitra eksternal
-                $party = \App\Models\Party::create([
-                    'party_type' => 'company',
-                ]);
-
-                \App\Models\PartyCompanyDetail::create([
-                    'party_id'     => $party->id,
-                    'company_name' => $validated['partner_name'],
-                ]);
-
-                \App\Models\ContractParty::create([
-                    'contract_id' => $contract->id,
-                    'party_id'    => $party->id,
-                    'party_order' => 2,
-                ]);
-
-                // Notifikasi ke pembuat sesuai status kontrak
                 $statusLabel = $validated['status'] === 'active' ? 'aktif' : 'disahkan';
                 Notification::create([
                     'user_id'     => Auth::id(),
@@ -87,12 +68,11 @@ class ExternalPartnerContractController extends Controller
                     'message'     => "{$contract->title} berhasil ditambahkan dengan status {$statusLabel}.",
                     'is_read'     => false,
                 ]);
+
                 return $contract;
             });
 
             $contract->load([
-                'parties.party.companyDetail',
-                'parties.party.individualDetail',
                 'creator',
                 'termination',
                 'addendums',
@@ -102,7 +82,6 @@ class ExternalPartnerContractController extends Controller
                 'message' => 'Kontrak mitra berhasil ditambahkan.',
                 'data'    => new ContractResource($contract),
             ], 201);
-
         } catch (\Exception $e) {
             Log::error('Store external contract error', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);

@@ -15,7 +15,6 @@ class ContractResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $partnerParty = $this->resolvePartner();
 
         // Ambil signature type dari internal signer terakhir yang TTD
         $lastInternalSignature = $this->signers
@@ -31,11 +30,11 @@ class ContractResource extends JsonResource
             'external_contract_number' => $this->external_contract_number,
             'title' => $this->title,
             'paper_size' => $this->paper_size ?? $this->template?->paper_size ?? 'f4',
-            'partner' => $partnerParty,
+            'partner' => $this->partner_name ?: '-',
             'category' => $this->resolveCategory(),
             'category_id' => $this->category_id ?? $this->template?->category_id,
             'template_id' => $this->template_id,
-            'partner_id' => $this->parties?->firstWhere('party_order', 2)?->party_id ?? null,
+            'partner_id' => null,
             'content' => $this->latestVersion?->content ?? $this->template?->content ?? '',
             'status' => $this->mapStatus($this->status),
             'start_date' => $this->start_date?->format('d-m-Y'),
@@ -195,14 +194,6 @@ class ContractResource extends JsonResource
         }
 
         return $this->category_id ? 'Kategori' : '-';
-    }
-
-    private function resolvePartner(): string
-    {
-        $parties = $this->parties?->sortBy('party_order');
-        $partner = $parties?->firstWhere('party_order', 2) ?? $parties?->first();
-
-        return $partner?->party?->display_name ?? '-';
     }
 
     private function mapStatus(string $status): string

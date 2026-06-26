@@ -81,8 +81,6 @@ class ContractReviewController extends Controller
                 'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
                 'termination',
                 'signers.reviews',
-                'parties.party.individualDetail:id,party_id,full_name',
-                'parties.party.companyDetail:id,party_id,company_name',
                 'latestVersion.fieldValues.fieldDefinition',
             ])
                 ->whereIn('id', $contractIds)
@@ -97,7 +95,7 @@ class ContractReviewController extends Controller
                 $query->where(function ($q) use ($search) {
                     $q->where('title', 'like', "%{$search}%")
                         ->orWhereHas('template.category', fn($cat) => $cat->where('name', 'like', "%{$search}%"))
-                        ->orWhereHas('parties.party', fn($p) => $p->whereHas('companyDetail', fn($cd) => $cd->where('company_name', 'like', "%{$search}%")));
+                        ->orWhere('partner_name', 'like', "%{$search}%");
                 });
             }
 
@@ -655,8 +653,6 @@ class ContractReviewController extends Controller
                 'creator:id,name',
                 'signers.user:id,name,job_title',
                 'template.category:id,name',
-                'parties.party.individualDetail:id,party_id,full_name',
-                'parties.party.companyDetail:id,party_id,company_name',
             ])->findOrFail($id);
 
             // ← Kalau sudah ada dokumen fisik yang diupload, kembalikan.
