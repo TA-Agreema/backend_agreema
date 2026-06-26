@@ -15,6 +15,7 @@ class Contract extends Model
         'external_contract_number',
         'contract_type',
         'title',
+        'partner_name',
         'paper_size',
         'start_date',
         'end_date',
@@ -67,10 +68,6 @@ class Contract extends Model
         return $this->hasMany(ContractSigner::class);
     }
 
-    public function parties(): HasMany
-    {
-        return $this->hasMany(ContractParty::class);
-    }
 
     public function addendums(): HasMany
     {
@@ -106,3 +103,4 @@ class Contract extends Model
         });
     }
 }
+

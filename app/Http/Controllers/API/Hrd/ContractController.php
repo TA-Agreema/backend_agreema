@@ -4,19 +4,16 @@ namespace App\Http\Controllers\API\Hrd;
 
 use Exception;
 use App\Models\User;
-use App\Models\Party;
 use App\Models\Contract;
 use App\Models\Template;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use App\Models\Notification;
 use Illuminate\Http\Request;
-use App\Models\ContractParty;
 use App\Models\ContractSigner;
 use App\Models\FieldDefinition;
 use App\Models\ContractCategory;
 use Illuminate\Http\JsonResponse;
-use App\Models\PartyCompanyDetail;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
@@ -42,8 +39,6 @@ class ContractController extends Controller
                     'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
                     'termination',
                     'signers.reviews',
-                    'parties.party.individualDetail:id,party_id,full_name',
-                    'parties.party.companyDetail:id,party_id,company_name',
                     'latestVersion.fieldValues.fieldDefinition',
                 ])
                 ->orderByDesc('created_at');
@@ -74,13 +69,7 @@ class ContractController extends Controller
                         ->orWhereHas('template.category', function ($cat) use ($search) {
                             $cat->where('name', 'like', "%{$search}%");
                         })
-                        ->orWhereHas('parties.party', function ($party) use ($search) {
-                            $party->whereHas('individualDetail', function ($individual) use ($search) {
-                                $individual->where('full_name', 'like', "%{$search}%");
-                            })->orWhereHas('companyDetail', function ($company) use ($search) {
-                                $company->where('company_name', 'like', "%{$search}%");
-                            });
-                        });
+                        ->orWhere('partner_name', 'like', "%{$search}%");
                 });
             }
 
@@ -133,7 +122,7 @@ class ContractController extends Controller
             }
 
             $contract = DB::transaction(function () use ($validated) {
-                $contract = Contract::create(array_merge(Arr::except($validated, ['content', 'field_values', 'partner_id', 'partner_name', 'parent_contract_id', 'signers']), [
+                $contract = Contract::create(array_merge(Arr::except($validated, ['content', 'field_values', 'parent_contract_id', 'signers']), [
                     'created_by' => Auth::id(),
                 ]));
 
@@ -161,38 +150,6 @@ class ContractController extends Controller
                         ]);
                     }
                 }
-                if (!empty($validated['partner_id'])) {
-                    ContractParty::create([
-                        'contract_id' => $contract->id,
-                        'party_id' => (int) $validated['partner_id'],
-                        'party_order' => 2,
-                    ]);
-                } elseif (!empty($validated['partner_name'])) {
-                    $name = trim($validated['partner_name']);
-                    $existing = Party::whereHas('companyDetail', function ($q) use ($name) {
-                        $q->whereRaw('LOWER(company_name) = ?', [strtolower($name)]);
-                    })->first();
-
-                    if (!$existing) {
-                        $party = Party::create(['party_type' => 'company']);
-                        PartyCompanyDetail::create([
-                            'party_id' => $party->id,
-                            'company_name' => $name,
-                            'address' => null,
-                        ]);
-                        $partyId = $party->id;
-                    } else {
-                        $partyId = $existing->id;
-                    }
-
-                    if (!empty($partyId)) {
-                        ContractParty::create([
-                            'contract_id' => $contract->id,
-                            'party_id' => $partyId,
-                            'party_order' => 2,
-                        ]);
-                    }
-                }
                 if (!empty($validated['content'])) {
                     $version = $contract->versions()->create([
                         'version_number' => 'V1',
@@ -216,8 +173,6 @@ class ContractController extends Controller
                 'statusLogs.changedBy:id,name',
                 'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
                 'termination',
-                'parties.party.individualDetail:id,party_id,full_name',
-                'parties.party.companyDetail:id,party_id,company_name',
                 'versions.creator:id,name',
             ]);
 
@@ -351,8 +306,6 @@ class ContractController extends Controller
                 'statusLogs.changedBy:id,name',
                 'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
                 'termination',
-                'parties.party.individualDetail:id,party_id,full_name',
-                'parties.party.companyDetail:id,party_id,company_name',
                 'versions.creator:id,name',
             ])->findOrFail($id);
 
@@ -385,8 +338,6 @@ class ContractController extends Controller
                 'creator:id,name',
                 'signers.user:id,name,job_title',
                 'template.category:id,name',
-                'parties.party.individualDetail:id,party_id,full_name',
-                'parties.party.companyDetail:id,party_id,company_name',
             ])->findOrFail($id);
 
             if ($contract->signed_document_path) {
@@ -459,7 +410,7 @@ class ContractController extends Controller
             }
 
             DB::transaction(function () use ($contract, $validated) {
-                $contract->update(Arr::except($validated, ['content', 'field_values', 'partner_id', 'partner_name', 'parent_contract_id', 'signers']));
+                $contract->update(Arr::except($validated, ['content', 'field_values', 'parent_contract_id', 'signers']));
 
                 // Update signers if provided
                 if (array_key_exists('signers', $validated) && is_array($validated['signers'])) {
@@ -511,46 +462,6 @@ class ContractController extends Controller
                         ->whereNotIn('id', $keptSignerIds)
                         ->delete();
                 }
-
-                // Update or create partner ContractParty (party_order = 2)
-                if (array_key_exists('partner_id', $validated) || array_key_exists('partner_name', $validated)) {
-                    $partnerId = null;
-
-                    if (array_key_exists('partner_id', $validated) && $validated['partner_id']) {
-                        $partnerId = (int) $validated['partner_id'];
-                    } elseif (array_key_exists('partner_name', $validated) && $validated['partner_name']) {
-                        $name = trim($validated['partner_name']);
-                        $existing = Party::whereHas('companyDetail', function ($q) use ($name) {
-                            $q->whereRaw('LOWER(company_name) = ?', [strtolower($name)]);
-                        })->first();
-                        if (!$existing) {
-                            $party = Party::create(['party_type' => 'company']);
-                            PartyCompanyDetail::create([
-                                'party_id' => $party->id,
-                                'company_name' => $name,
-                                'address' => null,
-                            ]);
-                            $partnerId = $party->id;
-                        } else {
-                            $partnerId = $existing->id;
-                        }
-                    }
-
-                    $existingLink = $contract->parties()->where('party_order', 2)->first();
-                    if ($partnerId && $existingLink) {
-                        $existingLink->update(['party_id' => $partnerId]);
-                    } elseif ($partnerId && !$existingLink) {
-                        ContractParty::create([
-                            'contract_id' => $contract->id,
-                            'party_id' => $partnerId,
-                            'party_order' => 2,
-                        ]);
-                    } elseif (!$partnerId && $existingLink) {
-                        // remove partner link if partner_id null
-                        $existingLink->delete();
-                    }
-                }
-
                 if (!empty($validated['content'])) {
                     $latestVersion = $contract->latestVersion;
 
@@ -586,8 +497,6 @@ class ContractController extends Controller
                 'statusLogs.changedBy:id,name',
                 'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
                 'termination',
-                'parties.party.individualDetail:id,party_id,full_name',
-                'parties.party.companyDetail:id,party_id,company_name',
                 'versions.creator:id,name',
             ]);
 
