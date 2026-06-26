@@ -596,6 +596,17 @@ class ContractController extends Controller
                 ], 422);
             }
 
+            if (!$contract->start_date || !$contract->end_date) {
+                return response()->json([
+                    'message' => 'Tanggal mulai dan tanggal selesai wajib diisi sebelum kontrak diajukan.',
+                ], 422);
+            }
+
+            if (blank($contract->partner_name)) {
+                return response()->json([
+                    'message' => 'Nama mitra wajib diisi sebelum kontrak diajukan.',
+                ], 422);
+            }
             $signers = ContractSigner::where('contract_id', $id)->get();
 
             $hasInternal = $signers->where('signer_type', 'internal')->isNotEmpty();
@@ -691,7 +702,6 @@ class ContractController extends Controller
 
         return array_values($normalized);
     }
-
     private function getMissingRequiredContractFields(Contract $contract): array
     {
         $latestVersion = $contract->latestVersion()
@@ -762,3 +772,4 @@ class ContractController extends Controller
             preg_match('/^{{\s*' . preg_quote($field->field_key, '/') . '\s*}}$/i', $trimmed);
     }
 }
+
