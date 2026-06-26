@@ -138,6 +138,13 @@ class AuthController extends Controller
         }
 
         $user = User::where('email', $request->email)->firstOrFail();
+
+        if (Hash::check($request->password, $user->password)) {
+            return response()->json([
+                'message' => 'Password baru tidak boleh sama dengan password sebelumnya.',
+            ], 422);
+        }
+
         $user->update([
             'password' => $request->password,
         ]);
