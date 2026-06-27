@@ -22,13 +22,6 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
 Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
-// External Routes (No auth required)
-Route::prefix('external/contracts')->group(function () {
-    Route::get('/preview', [ExternalContractController::class, 'preview']);
-    Route::post('/review', [ExternalContractController::class, 'review']);
-    Route::post('/sign', [ExternalContractController::class, 'sign']);
-});
-
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
@@ -134,5 +127,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [ExternalPartnerContractController::class, 'index']);
         Route::post('/', [ExternalPartnerContractController::class, 'store'])->middleware('permission:create.contract');
         Route::delete('/{id}', [ExternalPartnerContractController::class, 'destroy'])->middleware('permission:delete.contract');
+    });
+
+    // External Routes (No auth required)
+    Route::prefix('external/contracts')->group(function () {
+        Route::get('/preview', [ExternalContractController::class, 'preview']);
+        Route::get('/download', [ExternalContractController::class, 'downloadPdf']);
+        Route::post('/review', [ExternalContractController::class, 'review']);
+        Route::post('/sign', [ExternalContractController::class, 'sign']);
     });
 });
