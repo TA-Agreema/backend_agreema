@@ -75,6 +75,16 @@ class ExternalContractController extends Controller
             ? ContractSignerSignature::where('contract_signer_id', $signer->id)->orderBy('signed_at', 'desc')->first()
             : null;
 
+        // Cari metode TTD yang sudah dipakai signer internal (kalau sudah ada),
+        // agar signer eksternal diarahkan memakai metode yang sama.
+        $internalSignatureType = $contract->signers
+            ->where('signer_type', 'internal')
+            ->flatMap(fn($s) => $s->signatures ?? collect())
+            ->filter(fn($sig) => in_array($sig->signature_type, ['canvas', 'upload']))
+            ->sortByDesc('signed_at')
+            ->first()
+            ?->signature_type;
+
         return response()->json([
             'message'   => 'Contract retrieved successfully',
             'iteration' => $tokenRecord->iteration,
@@ -82,6 +92,7 @@ class ExternalContractController extends Controller
             'data'      => new ContractResource($contract),
             'is_signed' => $isSigned,
             'signature_path' => $signature?->signature_path,
+            'internal_signature_type' => $internalSignatureType,
         ]);
     }
 
@@ -531,5 +542,38 @@ class ExternalContractController extends Controller
             ->count();
 
         return $approvedCount >= $externalSignerIds->count();
+    }
+
+    /**
+     * GET /api/external/contracts/download?token=xxx
+     * Download PDF kontrak untuk pihak eksternal
+    */
+    public function downloadPdf(Request $request)
+    {
+        $tokenStr = $request->query('token');
+
+        if (!$tokenStr) {
+            return response()->json(['message' => 'Token tidak ditemukan.'], 400);
+        }
+
+        $tokenRecord = ExternalSignatureToken::with([
+            'contractSigner.contract.latestVersion',
+            'contractSigner.contract.signers.signatures',
+            'contractSigner.contract.signers.user',
+            'contractSigner.contract.creator',
+        ])->where('token', $tokenStr)->first();
+
+        if (!$tokenRecord || $tokenRecord->isExpired()) {
+            return response()->json(['message' => 'Token tidak valid atau kadaluarsa.'], 410);
+        }
+
+        $contract = $tokenRecord->contractSigner->contract;
+        $pdfService = new ContractPdfService();
+        $pdfPath = $pdfService->generateSignedPdf($contract);
+
+        return Storage::disk('public')->download(
+            $pdfPath,
+            $contract->title . '.pdf'
+        );
     }
 }
