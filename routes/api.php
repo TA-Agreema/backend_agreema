@@ -79,7 +79,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}', [ContractController::class, 'destroy'])->middleware('permission:delete.contract');
         Route::patch('/{id}/toggle-status', [ContractController::class, 'toggleStatus'])->middleware('permission:update.contract');
         Route::post('/{id}/submit', [ContractController::class, 'submit'])->middleware('permission:update.contract');
-
         // Addendum Routes (HRD only)
         Route::get('/{id}/addendums', [ContractAddendumController::class, 'index'])->middleware('permission:read.contracts');
         Route::post('/{id}/addendums', [ContractAddendumController::class, 'store'])->middleware('permission:create.addendum|create.contract_addendum');
