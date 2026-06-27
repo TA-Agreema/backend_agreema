@@ -32,9 +32,17 @@ class ContractResource extends JsonResource
             'paper_size' => $this->paper_size ?? $this->template?->paper_size ?? 'f4',
             'partner' => $this->partner_name ?: '-',
             'category' => $this->resolveCategory(),
-            'category_id' => $this->category_id ?? $this->template?->category_id,
+            'category_id' => $this->template?->category_id,
             'template_id' => $this->template_id,
             'partner_id' => null,
+            'parent_contract' => $this->whenLoaded('parentContract', function () {
+                return $this->parentContract ? [
+                    'id' => $this->parentContract->id,
+                    'contract_number' => $this->parentContract->contract_number,
+                    'title' => $this->parentContract->title,
+                ] : null;
+            }),
+            'renewal_count' => $this->child_contracts_count ?? 0,
             'content' => $this->latestVersion?->content ?? $this->template?->content ?? '',
             'status' => $this->mapStatus($this->status),
             'start_date' => $this->start_date?->format('d-m-Y'),
@@ -193,7 +201,7 @@ class ContractResource extends JsonResource
             return 'Kontrak Mitra';
         }
 
-        return $this->category_id ? 'Kategori' : '-';
+        return '-';
     }
 
     private function mapStatus(string $status): string

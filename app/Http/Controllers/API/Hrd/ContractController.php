@@ -38,9 +38,11 @@ class ContractController extends Controller
                     'creator:id,name',
                     'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
                     'termination',
+                    'parentContract:id,contract_number,title',
                     'signers.reviews',
                     'latestVersion.fieldValues.fieldDefinition',
                 ])
+                ->withCount('childContracts')
                 ->orderByDesc('created_at');
 
             // Secara default hanya menampilkan kontrak internal.
@@ -101,6 +103,16 @@ class ContractController extends Controller
         try {
             $validated = $request->validated();
 
+            if (!empty($validated['parent_contract_id'])) {
+                $parentContract = Contract::findOrFail($validated['parent_contract_id']);
+
+                if (!in_array($parentContract->status, ['active', 'approved', 'expired'], true)) {
+                    return response()->json([
+                        'message' => 'Hanya kontrak aktif, approved, atau expired yang dapat diperpanjang.',
+                    ], 422);
+                }
+            }
+
             // Auto-generate contract_number if not supplied
             if (empty($validated['contract_number'])) {
                 $categoryId = isset($validated['category_id']) ? (int) $validated['category_id'] : null;
@@ -122,7 +134,7 @@ class ContractController extends Controller
             }
 
             $contract = DB::transaction(function () use ($validated) {
-                $contract = Contract::create(array_merge(Arr::except($validated, ['content', 'field_values', 'parent_contract_id', 'signers']), [
+                $contract = Contract::create(array_merge(Arr::except($validated, ['content', 'field_values', 'signers']), [
                     'created_by' => Auth::id(),
                 ]));
 
@@ -197,6 +209,21 @@ class ContractController extends Controller
      * @param int|null $categoryId
      * @return string
      */
+    public function generateNumber(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'category_id' => 'nullable|integer|exists:contract_categories,id',
+        ]);
+
+        return response()->json([
+            'contract_number' => $this->generateContractNumber(
+                isset($validated['category_id'])
+                    ? (int) $validated['category_id']
+                    : null,
+            ),
+        ]);
+    }
+
     private function generateContractNumber(?int $categoryId = null): string
     {
         $prefix = $this->resolveContractNumberPrefix($categoryId);
@@ -306,8 +333,9 @@ class ContractController extends Controller
                 'statusLogs.changedBy:id,name',
                 'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
                 'termination',
+                'parentContract:id,contract_number,title',
                 'versions.creator:id,name',
-            ])->findOrFail($id);
+            ])->withCount('childContracts')->findOrFail($id);
 
             return response()->json([
                 'message' => 'Contract retrieved successfully',
@@ -323,6 +351,117 @@ class ContractController extends Controller
                 'message' => 'Contract not found',
                 'error' => $e->getMessage(),
             ], 404);
+        }
+    }
+
+    /**
+     * POST /api/contracts/{id}/renew
+     * Create a new draft contract from the latest approved/final contract version.
+     */
+    public function renew(int $id): JsonResponse
+    {
+        try {
+            $sourceContract = Contract::with([
+                'template:id,category_id,paper_size',
+                'latestVersion.fieldValues',
+                'signers',
+            ])->findOrFail($id);
+
+            if (!in_array($sourceContract->status, ['active', 'approved', 'expired'], true)) {
+                return response()->json([
+                    'message' => 'Hanya kontrak aktif, approved, atau expired yang dapat diperpanjang.',
+                ], 422);
+            }
+
+            $latestVersion = $sourceContract->latestVersion;
+            if (!$latestVersion) {
+                return response()->json([
+                    'message' => 'Kontrak belum memiliki versi dokumen yang dapat diperpanjang.',
+                ], 422);
+            }
+
+            $renewedContract = DB::transaction(function () use ($sourceContract, $latestVersion) {
+                $categoryId = $sourceContract->template?->category_id;
+
+                $contract = Contract::create([
+                    'parent_contract_id' => $sourceContract->id,
+                    'contract_number' => $this->generateContractNumber($categoryId),
+                    'external_contract_number' => null,
+                    'contract_type' => $sourceContract->contract_type ?? 'internal',
+                    'title' => $sourceContract->title,
+                    'partner_name' => $sourceContract->partner_name,
+                    'paper_size' => $sourceContract->paper_size ?? $sourceContract->template?->paper_size ?? 'a4',
+                    'start_date' => null,
+                    'end_date' => null,
+                    'status' => 'draft',
+                    'template_id' => $sourceContract->template_id,
+                    'created_by' => Auth::id(),
+                ]);
+
+                $version = $contract->versions()->create([
+                    'version_number' => 'V1',
+                    'content' => $latestVersion->content,
+                    'created_by' => Auth::id(),
+                ]);
+
+                $fieldValues = $latestVersion->fieldValues
+                    ->map(fn($fieldValue) => [
+                        'field_definition_id' => $fieldValue->field_definition_id,
+                        'value' => $fieldValue->value,
+                    ])
+                    ->values()
+                    ->all();
+
+                if (!empty($fieldValues)) {
+                    $version->fieldValues()->createMany($fieldValues);
+                }
+
+                $sourceContract->signers
+                    ->sortBy('sequence')
+                    ->values()
+                    ->each(function ($signer, int $index) use ($contract) {
+                        ContractSigner::create([
+                            'contract_id' => $contract->id,
+                            'user_id' => $signer->user_id,
+                            'external_email' => $signer->external_email,
+                            'signer_type' => $signer->signer_type,
+                            'signer_name' => $signer->signer_name,
+                            'signer_role' => $signer->signer_role,
+                            'sequence' => $signer->sequence ?? ($index + 1),
+                        ]);
+                    });
+
+                return $contract;
+            });
+
+            $renewedContract->load([
+                'template.category:id,name',
+                'creator:id,name',
+                'parentContract:id,contract_number,title',
+                'signers.user',
+                'signers.reviews',
+                'statusLogs.changedBy:id,name',
+                'addendums:id,contract_id,addendum_number,title,description,document_path,effective_date,created_at',
+                'termination',
+                'versions.creator:id,name',
+                'latestVersion.fieldValues.fieldDefinition',
+            ]);
+            $renewedContract->loadCount('childContracts');
+
+            return response()->json([
+                'message' => 'Draft renewal contract created successfully',
+                'data' => new ContractResource($renewedContract),
+            ], 201);
+        } catch (Exception $e) {
+            Log::error('Error renewing contract', [
+                'contract_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'An error occurred while renewing contract',
+                'error' => $e->getMessage(),
+            ], 500);
         }
     }
 

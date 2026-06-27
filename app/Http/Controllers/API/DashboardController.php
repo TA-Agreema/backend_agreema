@@ -49,12 +49,11 @@ class DashboardController extends Controller
             ->take(15)
             ->get();
 
-        $expiringContracts = Contract::with(['parties.party.companyDetail', 'parties.party.individualDetail'])
-            ->where('status', 'active')
+        $expiringContracts = Contract::where('status', 'active')
             ->whereNotNull('end_date')
             ->where('end_date', '<=', Carbon::now()->addDays(60))
             ->orderBy('end_date', 'asc')
-            ->get(['id', 'title', 'contract_number', 'end_date']);
+            ->get(['id', 'title', 'contract_number', 'partner_name', 'end_date']);
 
         return [
             'role' => 'admin',
@@ -93,13 +92,12 @@ class DashboardController extends Controller
             ->take(15)
             ->get();
 
-        $expiringContracts = Contract::with(['parties.party.companyDetail', 'parties.party.individualDetail'])
-            ->where('status', 'active')
+        $expiringContracts = Contract::where('status', 'active')
             ->where('created_by', $user->id)
             ->whereNotNull('end_date')
             ->where('end_date', '<=', Carbon::now()->addDays(60))
             ->orderBy('end_date', 'asc')
-            ->get(['id', 'title', 'contract_number', 'end_date']);
+            ->get(['id', 'title', 'contract_number', 'partner_name', 'end_date']);
 
         return [
             'role' => 'hrd',
