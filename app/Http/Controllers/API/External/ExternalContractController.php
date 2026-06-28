@@ -64,7 +64,7 @@ class ExternalContractController extends Controller
         }
 
         if ($tokenRecord->isExpired()) {
-            return response()->json(['message' => 'Token sudah kadaluarsa.'], 410);
+            return response()->json(['message' => 'Masa token sudah melewati 7 hari dan kedaluwarsa.'], 410);
         }
 
         $signer   = $tokenRecord->contractSigner;
@@ -130,7 +130,7 @@ class ExternalContractController extends Controller
             }
 
             if ($tokenRecord->isExpired()) {
-                return response()->json(['message' => 'Token sudah kadaluarsa.'], 410);
+                return response()->json(['message' => 'Masa token sudah melewati 7 hari dan kedaluwarsa.'], 410);
             }
 
             if ($tokenRecord->isUsed()) {
@@ -362,7 +362,7 @@ class ExternalContractController extends Controller
                 ->first();
 
             if (!$tokenRecord) return response()->json(['message' => 'Token tidak valid.'], 404);
-            if ($tokenRecord->isExpired()) return response()->json(['message' => 'Token sudah kadaluarsa.'], 410);
+            if ($tokenRecord->isExpired()) return response()->json(['message' => 'Masa token sudah melewati 7 hari dan kedaluwarsa.'], 410);
             if ($tokenRecord->isUsed()) return response()->json(['message' => 'Token sudah digunakan.'], 409);
 
             $signer   = $tokenRecord->contractSigner;

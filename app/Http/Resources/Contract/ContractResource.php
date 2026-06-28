@@ -51,6 +51,11 @@ class ContractResource extends JsonResource
             'uploaded_by' => $this->contract_type === 'external' ? ($this->creator?->name ?? '-') : null,
             'sign_method' => $lastInternalSignature?->signature_type ?? null,
             'signed_document_url' => $this->resolveSignedDocumentUrl($lastInternalSignature),
+            'has_expired_token' => $this->signers
+                ->where('signer_type', 'external')
+                ->flatMap(fn($s) => $s->signatureTokens?? collect())
+                ->filter(fn($t) => $t->expired_at && $t->expired_at->isPast() && !$t->used_at)
+                ->isNotEmpty(),
             'addendums' => $this->addendums
                 ->map(function ($addendum) {
                     $title = $addendum->title
