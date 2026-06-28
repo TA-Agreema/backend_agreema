@@ -409,7 +409,7 @@ class ContractReviewController extends Controller
                 'token' => $token,
                 'iteration' => $iteration,
                 'review_status' => 'pending',
-                'expired_at' => now()->addDays(7),
+                'expired_at' => now()->addMinutes(3), // untuk testing
             ]);
 
             // Kirim email
@@ -811,7 +811,7 @@ class ContractReviewController extends Controller
                 'token' => $token,
                 'iteration' => $iteration,
                 'review_status' => 'pending',
-                'expired_at' => now()->addDays(7),
+                'expired_at' => now()->addMinutes(3), // untuk testing
             ]);
 
             // URL konfirmasi (bukan URL TTD)

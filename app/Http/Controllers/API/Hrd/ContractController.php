@@ -13,9 +13,12 @@ use Illuminate\Http\Request;
 use App\Models\ContractSigner;
 use App\Models\FieldDefinition;
 use App\Models\ContractCategory;
+use App\Models\ExternalSignatureToken;
+use App\Mail\ExternalSigningRequestMail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -40,6 +43,7 @@ class ContractController extends Controller
                     'termination',
                     'parentContract:id,contract_number,title',
                     'signers.reviews',
+                    'signers.signatureTokens',
                     'latestVersion.fieldValues.fieldDefinition',
                 ])
                 ->withCount('childContracts')
@@ -909,6 +913,98 @@ class ContractController extends Controller
         return $trimmed === '' ||
             strcasecmp($trimmed, '[' . $field->field_label . ']') === 0 ||
             preg_match('/^{{\s*' . preg_quote($field->field_key, '/') . '\s*}}$/i', $trimmed);
+    }
+
+    /**
+     * POST /api/contracts/{id}/resend-signing
+     * Kirim ulang tautan tanda tangan ke semua signer eksternal yang belum
+     * menyelesaikan proses (used_at masih null), misalnya karena token
+     * sebelumnya sudah kedaluwarsa atau email tidak diterima.
+     * Dipicu oleh HRD (pembuat kontrak), bukan manager.
+     */
+    public function resendExternalSigning(int $id): JsonResponse
+    {
+        try {
+            $contract = Contract::with('signers')->findOrFail($id);
+
+            if (!in_array($contract->status, ['approved', 'review'])) {
+                return response()->json([
+                    'message' => 'Hanya kontrak yang sedang menunggu tanda tangan eksternal yang dapat dikirim ulang.',
+                ], 422);
+            }
+
+            $hasExternal = $contract->signers->where('signer_type', 'external')->isNotEmpty();
+            if (!$hasExternal) {
+                return response()->json([
+                    'message' => 'Kontrak ini tidak memiliki pihak eksternal yang perlu menandatangani.',
+                ], 422);
+            }
+
+            $latestIteration = ExternalSignatureToken::whereHas('contractSigner', function ($q) use ($contract) {
+                $q->where('contract_id', $contract->id);
+            })->max('iteration') ?? 0;
+
+            $this->dispatchExternalSigningEmails($contract, $latestIteration + 1);
+
+            return response()->json([
+                'message' => 'Tautan tanda tangan berhasil dikirim ulang ke pihak eksternal.',
+            ]);
+        } catch (Exception $e) {
+            Log::error('Gagal mengirim ulang tautan signing eksternal', [
+                'contract_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Terjadi kesalahan saat mengirim ulang tautan.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Nonaktifkan token lama & buat token baru untuk semua signer eksternal,
+     * lalu kirim email permintaan tanda tangan.
+     */
+    private function dispatchExternalSigningEmails(Contract $contract, int $iteration): void
+    {
+        $externalSigners = $contract->signers()
+            ->where('signer_type', 'external')
+            ->whereNotNull('external_email')
+            ->get();
+
+        foreach ($externalSigners as $signer) {
+            // Nonaktifkan token lama (tandai sebagai expired)
+            ExternalSignatureToken::where('contract_signer_id', $signer->id)
+                ->whereNull('used_at')
+                ->update(['expired_at' => now()]);
+
+            // Buat token baru untuk iterasi ini
+            $token = Str::random(64);
+
+            ExternalSignatureToken::create([
+                'contract_signer_id' => $signer->id,
+                'token' => $token,
+                'iteration' => $iteration,
+                'review_status' => 'pending',
+                'expired_at' => now()->addDays(7),
+            ]);
+
+            // Kirim email
+            $signingUrl = config('app.frontend_url')
+                . '/external/sign?token=' . $token;
+
+            try {
+                Mail::to($signer->external_email)
+                    ->send(new ExternalSigningRequestMail($contract, $signingUrl, $iteration));
+            } catch (Exception $e) {
+                Log::error('Gagal mengirim email external signing', [
+                    'contract_id' => $contract->id,
+                    'email' => $signer->external_email,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 }
 
