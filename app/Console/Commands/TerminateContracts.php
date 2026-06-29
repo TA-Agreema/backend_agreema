@@ -32,7 +32,7 @@ class TerminateContracts extends Command
                 'user_id'     => $contract->created_by,
                 'contract_id' => $contract->id,
                 'type'        => 'contract_terminated',
-                'message'     => "{$contract->title} resmi dihentikan per {$effectiveDate}.",
+                'message'     => "{$contract->title} resmi dihentikan pada {$effectiveDate}.",
                 'is_read'     => false,
             ]);
 
@@ -43,7 +43,7 @@ class TerminateContracts extends Command
                         'user_id'     => $signer->user_id,
                         'contract_id' => $contract->id,
                         'type'        => 'contract_terminated',
-                        'message'     => "{$contract->title} resmi dihentikan per {$effectiveDate}.",
+                        'message'     => "{$contract->title} resmi dihentikan pada {$effectiveDate}.",
                         'is_read'     => false,
                     ]);
                 }

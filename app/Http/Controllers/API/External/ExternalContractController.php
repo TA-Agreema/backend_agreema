@@ -193,12 +193,12 @@ class ExternalContractController extends Controller
                             ? $contract->end_date->locale('id')->isoFormat('D MMMM YYYY')
                             : '(belum ditentukan)';
 
-                    // Notifikasi ke HRD — kontrak langsung aktif
+                    // Notifikasi ke HRD — ketika kontrak langsung aktif
                         Notification::create([
                             'user_id'     => $contract->created_by,
                             'contract_id' => $contract->id,
                             'type'        => 'contract_activated',
-                            'message'     => "Pihak kedua telah menyetujui {$contract->title}. Kontrak telah aktif sampai pada tanggal {$endDate}.",
+                            'message'     => "Kedua belah pihak telah mengesahkan {$contract->title}. Kontrak sudah sah danakan aktif sampai pada tanggal {$endDate}.",
                             'is_read'     => false,
                         ]);
 
@@ -208,7 +208,7 @@ class ExternalContractController extends Controller
                                     'user_id'     => $signerItem->user_id,
                                     'contract_id' => $contract->id,
                                     'type'        => 'contract_activated',
-                                    'message'     => "Pihak kedua telah menyetujui {$contract->title}. Kontrak telah aktif sampai pada tanggal {$endDate}.",
+                                    'message'     => "{$contract->title} sudah sah dan akan aktif sampai pada tanggal {$endDate}.",
                                     'is_read'     => false,
                                 ]);
                             }
@@ -223,7 +223,7 @@ class ExternalContractController extends Controller
                                 'user_id'     => $contract->created_by,
                                 'contract_id' => $contract->id,
                                 'type'        => 'external_approved',
-                                'message'     => "Pihak kedua telah menyetujui {$contract->title}. Kontrak akan aktif pada tanggal {$startDate}.",
+                                'message'     => "Pihak kedua telah menyetujui {$contract->title} yang diunggah oleh {$signerItem->user_id}. Kontrak sudah sah dan akan aktif pada tanggal {$startDate}.",
                                 'is_read'     => false,
                             ]);
 
@@ -233,7 +233,7 @@ class ExternalContractController extends Controller
                                         'user_id'     => $signerItem->user_id,
                                         'contract_id' => $contract->id,
                                         'type'        => 'external_approved',
-                                        'message'     => "Pihak kedua telah menyetujui dokumen {$contract->title} yang diupload. Kontrak akan aktif pada tanggal {$startDate}.",
+                                        'message'     => "Pihak kedua telah menyetujui dokumen {$contract->title} yang anda unggah. Kontrak sudah sah dan akan aktif pada tanggal {$startDate}.",
                                         'is_read'     => false,
                                     ]);
                                 }
@@ -243,7 +243,11 @@ class ExternalContractController extends Controller
                     return response()->json(['message' => 'Kontrak berhasil disetujui dan kini aktif.']);
                 }
 
-                DB::transaction(function () use ($contract, $signer, $tokenRecord, $latestVersion, $validated, $reviewDocumentPath, $notes) {
+                $startDate = $contract->start_date
+                    ? $contract->start_date->locale('id')->isoFormat('D MMMM YYYY')
+                    : '(belum ditentukan)';
+
+                DB::transaction(function () use ($contract, $signer, $tokenRecord, $latestVersion, $validated, $reviewDocumentPath, $notes, $startDate) {
                     ContractSignerReview::create([
                         'contract_signer_id'   => $signer->id,
                         'contract_version_id'  => $latestVersion->id,
@@ -270,16 +274,7 @@ class ExternalContractController extends Controller
                                 'user_id'     => $contract->created_by,
                                 'contract_id' => $contract->id,
                                 'type'        => 'external_approved',
-                                'message'     => "Pihak kedua telah menyetujui {$contract->title}. Kontrak aktif.",
-                                'is_read'     => false,
-                            ]);
-                        // hapus
-                        } else {
-                            Notification::create([
-                                'user_id'     => $contract->created_by,
-                                'contract_id' => $contract->id,
-                                'type'        => 'external_partial_approved',
-                                'message'     => "Satu pihak eksternal telah menyetujui {$contract->title}. Menunggu pihak lain.",
+                                'message'     => "Pihak kedua telah menyetujui {$contract->title}. Kontrak sudah sah dan akan aktif pada tanggal {$startDate}.",
                                 'is_read'     => false,
                             ]);
                         }
@@ -440,8 +435,8 @@ class ExternalContractController extends Controller
                     'contract_id' => $contract->id,
                     'type'        => $isNowActive ? 'contract_activated' : 'all_reviewers_signed',
                     'message'     => $isNowActive
-                        ? "Pihak kedua telah menandatangani {$contract->title}. Kontrak telah aktif sampai pada tanggal {$endDate}."
-                        : "Pihak kedua telah menandatangani {$contract->title}. Kontrak akan aktif pada tanggal {$startDate}.",
+                        ? "Kedua belah pihak telah menandatangani {$contract->title}. Kontrak akan aktif sampai pada tanggal {$endDate}."
+                        : "Kedua belah pihak telah menandatangani {$contract->title}. Kontrak sudah sah dan akan aktif pada tanggal {$startDate}.",
                     'is_read'     => false,
                 ]);
 
@@ -453,8 +448,8 @@ class ExternalContractController extends Controller
                             'contract_id' => $contract->id,
                             'type'        => $isNowActive ? 'contract_activated' : 'all_reviewers_signed',
                             'message'     => $isNowActive
-                                ? "Pihak kedua telah menandatangani {$contract->title}. Kontrak telah aktif sampai pada tanggal {$endDate}."
-                                : "Pihak kedua telah menandatangani {$contract->title}. Kontrak akan aktif pada tanggal {$startDate}.",
+                                ? "Kedua belah pihak telah menandatangani {$contract->title}. Kontrak sudah sah dan akan aktif sampai pada tanggal {$endDate}."
+                                : "Kedua belah pihak telah menandatangani {$contract->title}. Kontrak sudah sah dan akan aktif pada tanggal {$startDate}.",
                             'is_read'     => false,
                         ]);
                     }

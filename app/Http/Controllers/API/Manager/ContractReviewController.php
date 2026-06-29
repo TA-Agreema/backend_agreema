@@ -210,107 +210,22 @@ class ContractReviewController extends Controller
 
                 if ($validated['status'] === 'approved') {
                     $hasExternal = $contract->signers->where('signer_type', 'external')->isNotEmpty();
-                    $allInternalSigners = $contract->signers->where('signer_type', 'internal');
 
-                    // Cek apakah semua internal signer sudah approve di iterasi ini
-                    $approvedSignerIds = ContractSignerReview::whereIn('contract_signer_id', $allInternalSigners->pluck('id'))
-                        ->where('iteration', $iteration)
-                        ->where('status', 'approved')
-                        ->pluck('contract_signer_id');
-
-                    $allInternalApproved = $allInternalSigners->count() > 0
-                        && $allInternalSigners->count() === $approvedSignerIds->count();
-
-                    if ($allInternalApproved) {
-                        if ($hasExternal) {
-                            // Semua internal approve + ada external → kirim ke eksternal
-                            $contract->update(['status' => 'approved']);
-                            $this->dispatchExternalSigningEmails($contract, $iteration + 1);
-
-                            // Notifikasi ke HRD (pembuat kontrak)
-                            Notification::create([
-                                'user_id'     => $contract->created_by,
-                                'contract_id' => $contract->id,
-                                'type'        => 'manager_approved',
-                                'message'     => "Manager telah menyetujui kontrak {$contract->contract_number}. Email dikirim ke pihak eksternal.",
-                                'is_read'     => false,
-                            ]);
-                        } else {
-                            // Semua internal approve + tidak ada external → langsung ke tahap TTD
-                            $contract->update(['status' => 'approved']);
-
-                            Notification::create([
-                                'user_id'     => $contract->created_by,
-                                'contract_id' => $contract->id,
-                                'type'        => 'manager_approved',
-                                'message'     => "Semua pihak internal telah menyetujui kontrak {$contract->contract_number}. Silakan lanjutkan penandatanganan.",
-                                'is_read'     => false,
-                            ]);
-
-                            // Notifikasi ke semua internal signer agar TTD
-                            foreach ($allInternalSigners as $internalSigner) {
-                                if ($internalSigner->user_id) {
-                                    Notification::create([
-                                        'user_id'     => $internalSigner->user_id,
-                                        'contract_id' => $contract->id,
-                                        'type'        => 'review_requested',
-                                        'message'     => "Semua pihak telah menyetujui kontrak {$contract->contract_number}. Silakan lakukan penandatanganan.",
-                                        'is_read'     => false,
-                                    ]);
-                                }
-                            }
-                        }
-                    } else {
-                        // Belum semua internal approve → notifikasi signer berikutnya
-                        $approvedIds = $approvedSignerIds->toArray();
-                        $nextSigner = $allInternalSigners
-                            ->sortBy('sequence')
-                            ->first(fn($s) => !in_array($s->id, $approvedIds));
-
-                        if ($nextSigner && $nextSigner->user_id) {
-                            Notification::create([
-                                'user_id'     => $nextSigner->user_id,
-                                'contract_id' => $contract->id,
-                                'type'        => 'review_requested',
-                                'message'     => "Kontrak {$contract->contract_number} memerlukan persetujuan Anda.",
-                                'is_read'     => false,
-                            ]);
-                        }
-
-                        // Notifikasi konfirmasi ke reviewer saat ini
-                        Notification::create([
-                            'user_id'     => $user->id,
-                            'contract_id' => $contract->id,
-                            'type'        => 'manager_approved',
-                            'message'     => "Anda telah menyetujui kontrak {$contract->contract_number}. Menunggu persetujuan pihak internal lainnya.",
-                            'is_read'     => false,
-                        ]);
+                    if ($hasExternal) {
+                        // Kirim ke eksternal
+                        $contract->update(['status' => 'approved']);
+                        $this->dispatchExternalSigningEmails($contract, $iteration + 1);
                     }
-                } elseif ($validated['status'] === 'rejected') {
-                    // Ubah status kontrak → rejected
-                    $contract->update(['status' => 'rejected']);
-
-                    // Kirim email penolakan ke external
-                    $this->dispatchExternalRejectionEmails($contract, $notes);
-
-                    // Notifikasi ke HRD
-                    Notification::create([
-                        'user_id' => $contract->created_by,
-                        'contract_id' => $contract->id,
-                        'type'        => 'manager_rejected',
-                        'message'     => "Manager telah menolak kontrak {$contract->contract_number}. Alasan: {$notes}",
-                        'is_read'     => false,
-                    ]);
                 } else {
                     // Ubah status kontrak → revision (kembali ke HRD)
                     $contract->update(['status' => 'revision']);
 
                     // Notifikasi ke HRD agar melakukan perbaikan
                     Notification::create([
-                        'user_id' => $contract->created_by,
+                        'user_id'     => $contract->created_by,
                         'contract_id' => $contract->id,
                         'type'        => 'manager_revision_requested',
-                        'message'     => "Manager meminta revisi untuk kontrak {$contract->contract_number}: {$notes}",
+                        'message'     => "Revisi diminta oleh pihak pertama untuk {$contract->title}. Silahkan cek detail kontrak untuk melihat catatan dan dokumen revisi yang dikirimkan.",
                         'is_read'     => false,
                     ]);
                 }
@@ -572,7 +487,7 @@ class ContractReviewController extends Controller
                 Notification::create([
                     'user_id' => $contract->created_by,
                     'contract_id' => $contract->id,
-                    'type'        => 'all_internal_signed',
+                    'type'        => 'manager_approved',
                     'message'     => "Pihak pertama telah menandatangani kontrak {$contract->title}. Email dikirim ke pihak kedua.",
                     'is_read'     => false,
                 ]);
