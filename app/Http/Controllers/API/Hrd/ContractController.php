@@ -793,7 +793,7 @@ class ContractController extends Controller
                         'user_id' => $signer->user_id,
                         'contract_id' => $contract->id,
                         'type' => 'review_requested',
-                        'message' => "{$contract->title} memerlukan peninjauan Anda.",
+                        'message' => "{$contract->title} memerlukan peninjauan anda.",
                         'is_read' => false,
                     ]);
                 }
