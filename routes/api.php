@@ -131,12 +131,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [ExternalPartnerContractController::class, 'store'])->middleware('permission:create.contract');
         Route::delete('/{id}', [ExternalPartnerContractController::class, 'destroy'])->middleware('permission:delete.contract');
     });
+});
 
-    // External Routes (No auth required)
-    Route::prefix('external/contracts')->group(function () {
-        Route::get('/preview', [ExternalContractController::class, 'preview']);
-        Route::get('/download', [ExternalContractController::class, 'downloadPdf']);
-        Route::post('/review', [ExternalContractController::class, 'review']);
-        Route::post('/sign', [ExternalContractController::class, 'sign']);
-    });
+// External Routes (No auth required)
+Route::prefix('external/contracts')->group(function () {
+    Route::get('/preview', [ExternalContractController::class, 'preview']);
+    Route::get('/download', [ExternalContractController::class, 'downloadPdf']);
+    Route::post('/review', [ExternalContractController::class, 'review']);
+    Route::post('/sign', [ExternalContractController::class, 'sign']);
 });
