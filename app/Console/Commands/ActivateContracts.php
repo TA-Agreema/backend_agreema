@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 
 class ActivateContracts extends Command
 {
-    protected $signature   = 'contracts:activate';
+    protected $signature = 'contracts:activate';
     protected $description = 'Aktifkan kontrak yang sudah melewati start_date';
 
     public function handle(): void
@@ -26,24 +26,23 @@ class ActivateContracts extends Command
                 ? $contract->end_date->locale('id')->isoFormat('D MMMM YYYY')
                 : '(belum ditentukan)';
 
-            // Notifikasi ke HRD
             Notification::create([
-                'user_id'     => $contract->created_by,
+                'user_id' => $contract->created_by,
                 'contract_id' => $contract->id,
-                'type'        => 'contract_activated',
-                'message'     => "{$contract->title} kini telah aktif sampai pada tanggal {$endDate}.",
-                'is_read'     => false,
+                'type' => 'contract_activated',
+                'message' => "Kontrak \"{$contract->title}\" kini telah aktif sampai pada tanggal {$endDate}.",
+                'is_read' => false,
             ]);
 
-            // Notifikasi ke manager (internal signer)
+            // Notifikasi ke internal signer (manager)
             foreach ($contract->signers as $signer) {
-                if ($signer->signer_type === 'internal' && $signer->user_id) {
+                if ($signer->signer_type === 'internal' && $signer->user_id && $signer->user_id !== $contract->created_by) {
                     Notification::create([
-                        'user_id'     => $signer->user_id,
+                        'user_id' => $signer->user_id,
                         'contract_id' => $contract->id,
-                        'type'        => 'contract_activated',
-                        'message'     => "{$contract->title} kini telah aktif sampai pada tanggal {$endDate}.",
-                        'is_read'     => false,
+                        'type' => 'contract_activated',
+                        'message' => "Kontrak \"{$contract->title}\" kini telah aktif sampai pada tanggal {$endDate}.",
+                        'is_read' => false,
                     ]);
                 }
             }
