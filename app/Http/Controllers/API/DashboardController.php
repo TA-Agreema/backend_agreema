@@ -61,6 +61,7 @@ class DashboardController extends Controller
             ->count();
 
         $distribution = Contract::select('status', DB::raw('count(*) as total'))
+            ->where('status', '!=', 'signed')
             ->groupBy('status')
             ->get();
 
@@ -121,6 +122,7 @@ class DashboardController extends Controller
         $approved = Contract::where('status', 'approved')->where('created_by', $user->id)->count();
 
         $distribution = Contract::where('created_by', $user->id)
+            ->where('status', '!=', 'signed')
             ->select('status', DB::raw('count(*) as total'))
             ->groupBy('status')
             ->get();

@@ -29,7 +29,7 @@ class ExternalSignatureToken extends Model
 
     public function isExpired(): bool
     {
-        return $this->expired_at->isPast();
+        return $this->expired_at !== null && $this->expired_at->isPast();
     }
 
     public function isUsed(): bool

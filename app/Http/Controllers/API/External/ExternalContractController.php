@@ -67,6 +67,14 @@ class ExternalContractController extends Controller
             return response()->json(['message' => 'Masa token sudah melewati 7 hari dan kedaluwarsa.'], 410);
         }
 
+        if ($tokenRecord->isUsed()) {
+            return response()->json([
+                'message'       => 'Token sudah digunakan dan tidak dapat diakses lagi.',
+                'used_at'       => $tokenRecord->used_at,
+                'review_status' => $tokenRecord->review_status,
+            ], 409);
+        }
+
         $signer   = $tokenRecord->contractSigner;
         $contract = $signer->contract;
 
@@ -493,13 +501,21 @@ class ExternalContractController extends Controller
         $contract->loadMissing('signers.user');
 
         foreach ($contract->signers as $signer) {
-            if ($signer->signer_type === 'internal' && $signer->user) {
-                Mail::to($signer->user->email)
-                    ->send(new ContractActivatedMail($contract, $signer->user->name));
-            } elseif ($signer->signer_type === 'external' && $signer->external_email) {
-                $name = $signer->signer_name ?? 'Pihak Eksternal';
-                Mail::to($signer->external_email)
-                    ->send(new ContractActivatedMail($contract, $name));
+            try {
+                if ($signer->signer_type === 'internal' && $signer->user) {
+                    Mail::to($signer->user->email)
+                        ->send(new ContractActivatedMail($contract, $signer->user->name));
+                } elseif ($signer->signer_type === 'external' && $signer->external_email) {
+                    $name = $signer->signer_name ?? 'Pihak Eksternal';
+                    Mail::to($signer->external_email)
+                        ->send(new ContractActivatedMail($contract, $name));
+                }
+            } catch (\Exception $e) {
+                Log::error('Gagal mengirim email aktivasi kontrak', [
+                    'contract_id' => $contract->id,
+                    'signer_id'   => $signer->id,
+                    'error'       => $e->getMessage(),
+                ]);
             }
         }
     }
