@@ -7,14 +7,11 @@
 <td style="vertical-align: middle;">
     <img
         src="cid:agreema-logo"
-        width="48"
-        height="48"
+        width="170"
+        height="40"
         alt="Logo Agreema"
-        style="display: block; width: 48px; height: 48px; border: 0;"
+        style="display: block; width: 170px; height: 40px; border: 0;"
     >
-</td>
-<td style="vertical-align: middle; padding-left: 14px; color: #172033; font-size: 22px; font-weight: 700; line-height: 1.2;">
-    Agreema
 </td>
 </tr>
 </table>
