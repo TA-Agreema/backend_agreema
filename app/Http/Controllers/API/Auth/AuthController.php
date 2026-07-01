@@ -30,7 +30,7 @@ class AuthController extends Controller
                 return response()->json([
                     'message' => 'Invalid login credentials'
                 ], 401);
-            }
+            }   
 
             if (isset($user->is_active) && !$user->is_active) {
                 return response()->json([

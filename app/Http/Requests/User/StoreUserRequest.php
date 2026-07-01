@@ -37,4 +37,11 @@ class StoreUserRequest extends FormRequest
             'roles.*' => 'string|exists:roles,name',
         ];
     }
+
+    public function messages(): array
+    {
+        return [
+            'email.unique' => 'Email sudah digunakan oleh pengguna lain.',
+        ];
+    }
 }

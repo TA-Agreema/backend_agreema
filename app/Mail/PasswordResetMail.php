@@ -26,9 +26,9 @@ class PasswordResetMail extends Mailable
             using: [
                 function (Email $message): void {
                     $message->embedFromPath(
-                        public_path('LogoAgreemaFavicon.svg'),
+                        public_path('LogoAgreema.png'),
                         'agreema-logo',
-                        'image/svg+xml',
+                        'image/png',
                     );
                 },
             ],
