@@ -9,6 +9,7 @@ use App\Http\Controllers\API\Admin\CategoryController;
 use App\Http\Controllers\API\Admin\TemplateController;
 use App\Http\Controllers\API\Admin\FieldDefinitionController;
 use App\Http\Controllers\API\Hrd\ContractController;
+use App\Http\Controllers\API\Hrd\ContractNumberController;
 use App\Http\Controllers\API\Hrd\SignerController;
 use App\Http\Controllers\API\Hrd\ContractAddendumController;
 use App\Http\Controllers\API\Hrd\ContractTerminationController;
@@ -63,7 +64,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Contracts: daftar kontrak
     Route::prefix('contracts')->group(function () {
-        Route::get('/generate-number', [ContractController::class, 'generateNumber'])->middleware('permission:create.contract');
+        Route::get('/generate-number', [ContractNumberController::class, 'generateNumber'])->middleware('permission:create.contract');
         Route::get('/', [ContractController::class, 'index'])->middleware('permission:read.contracts');
         Route::post('/', [ContractController::class, 'store'])->middleware('permission:create.contract');
         Route::get('/{id}/download', [ContractController::class, 'download'])->middleware('permission:download.contract');
