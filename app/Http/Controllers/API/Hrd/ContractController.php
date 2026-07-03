@@ -12,7 +12,6 @@ use App\Models\Notification;
 use Illuminate\Http\Request;
 use App\Models\ContractSigner;
 use App\Models\FieldDefinition;
-use App\Models\ContractCategory;
 use App\Models\ExternalSignatureToken;
 use App\Mail\ExternalSigningRequestMail;
 use Illuminate\Http\JsonResponse;
@@ -21,6 +20,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Http\Resources\Contract\ContractResource;
 use App\Http\Requests\Contract\StoreContractRequest;
@@ -28,6 +28,10 @@ use App\Http\Requests\Contract\UpdateContractRequest;
 
 class ContractController extends Controller
 {
+    public function __construct(
+        private readonly ContractNumberController $contractNumberController,
+    ) {}
+
     /**
      * GET /api/contracts
      * List kontrak untuk ContractListPage.
@@ -46,7 +50,11 @@ class ContractController extends Controller
                     'signers.signatureTokens',
                     'latestVersion.fieldValues.fieldDefinition',
                 ])
-                ->withCount('childContracts')
+                ->withCount([
+                    'childContracts',
+                    'childContracts as open_renewal_count' => fn($query) =>
+                        $query->whereIn('status', ['draft', 'review', 'revision', 'approved', 'signed', 'active']),
+                ])
                 ->orderByDesc('created_at');
 
             // Secara default hanya menampilkan kontrak internal.
@@ -107,16 +115,6 @@ class ContractController extends Controller
         try {
             $validated = $request->validated();
 
-            if (!empty($validated['parent_contract_id'])) {
-                $parentContract = Contract::findOrFail($validated['parent_contract_id']);
-
-                if (!in_array($parentContract->status, ['active', 'approved', 'expired'], true)) {
-                    return response()->json([
-                        'message' => 'Hanya kontrak aktif, approved, atau expired yang dapat diperpanjang.',
-                    ], 422);
-                }
-            }
-
             // Auto-generate contract_number if not supplied
             if (empty($validated['contract_number'])) {
                 $categoryId = isset($validated['category_id']) ? (int) $validated['category_id'] : null;
@@ -127,7 +125,8 @@ class ContractController extends Controller
                         $categoryId = (int) $tpl->category_id;
                     }
                 }
-                $validated['contract_number'] = $this->generateContractNumber($categoryId);
+                $validated['contract_number'] = $this->contractNumberController
+                    ->generateContractNumber($categoryId);
             }
 
             if (empty($validated['paper_size'])) {
@@ -138,6 +137,28 @@ class ContractController extends Controller
             }
 
             $contract = DB::transaction(function () use ($validated) {
+                if (!empty($validated['parent_contract_id'])) {
+                    $parentContract = Contract::query()
+                        ->lockForUpdate()
+                        ->findOrFail($validated['parent_contract_id']);
+
+                    if (!in_array($parentContract->status, ['active', 'expired'], true)) {
+                        throw ValidationException::withMessages([
+                            'parent_contract_id' => 'Hanya kontrak aktif atau berakhir yang dapat dijadikan dasar kontrak baru.',
+                        ]);
+                    }
+
+                    $hasOpenRenewal = $parentContract->childContracts()
+                        ->whereIn('status', ['draft', 'review', 'revision', 'approved', 'signed', 'active'])
+                        ->exists();
+
+                    if ($hasOpenRenewal) {
+                        throw ValidationException::withMessages([
+                            'parent_contract_id' => 'Kontrak turunan untuk kontrak ini masih diproses.',
+                        ]);
+                    }
+                }
+
                 $contract = Contract::create(array_merge(Arr::except($validated, ['content', 'field_values', 'signers']), [
                     'created_by' => Auth::id(),
                 ]));
@@ -196,6 +217,8 @@ class ContractController extends Controller
                 'message' => 'Contract created successfully',
                 'data' => new ContractResource($contract),
             ], 201);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (Exception $e) {
             Log::error('Error creating contract', [
                 'error' => $e->getMessage(),
@@ -207,118 +230,6 @@ class ContractController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
-    }
-
-    /**
-     * @param int|null $categoryId
-     * @return string
-     */
-    public function generateNumber(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'category_id' => 'nullable|integer|exists:contract_categories,id',
-        ]);
-
-        return response()->json([
-            'contract_number' => $this->generateContractNumber(
-                isset($validated['category_id'])
-                    ? (int) $validated['category_id']
-                    : null,
-            ),
-        ]);
-    }
-
-    private function generateContractNumber(?int $categoryId = null): string
-    {
-        $prefix = $this->resolveContractNumberPrefix($categoryId);
-        $year = now()->year;
-        $month = now()->month;
-        $romanMonth = $this->getRomanMonth($month);
-        $sequence = $this->getNextContractSequence($prefix, $year, $month);
-        $candidate = $this->buildContractNumber($prefix, $sequence, $romanMonth, $year);
-
-        while (Contract::where('contract_number', $candidate)->exists()) {
-            $sequence++;
-            $candidate = $this->buildContractNumber($prefix, $sequence, $romanMonth, $year);
-        }
-
-        return $candidate;
-    }
-
-    private function resolveContractNumberPrefix(?int $categoryId): string
-    {
-        if (!$categoryId) {
-            return 'SPK';
-        }
-
-        $category = ContractCategory::find($categoryId);
-        if (!$category) {
-            return 'SPK';
-        }
-
-        if (!empty($category->number_prefix)) {
-            return strtoupper(trim($category->number_prefix));
-        }
-
-        return $this->buildPrefixFromCategoryName($category->name);
-    }
-
-    private function buildPrefixFromCategoryName(?string $categoryName): string
-    {
-        if (empty($categoryName)) {
-            return 'SPK';
-        }
-
-        $words = preg_split('/[^\p{L}\p{N}]+/u', trim($categoryName)) ?: [];
-        $letters = [];
-
-        foreach ($words as $word) {
-            $word = trim($word);
-            if ($word === '') {
-                continue;
-            }
-
-            $letters[] = mb_substr($word, 0, 1, 'UTF-8');
-        }
-
-        return count($letters) > 0 ? strtoupper(implode('', $letters)) : 'SPK';
-    }
-
-    private function getRomanMonth(int $month): string
-    {
-        $romanMonths = [
-            1 => 'I',
-            2 => 'II',
-            3 => 'III',
-            4 => 'IV',
-            5 => 'V',
-            6 => 'VI',
-            7 => 'VII',
-            8 => 'VIII',
-            9 => 'IX',
-            10 => 'X',
-            11 => 'XI',
-            12 => 'XII',
-        ];
-
-        return $romanMonths[$month] ?? 'I';
-    }
-
-    private function getNextContractSequence(string $prefix, int $year, int $month): int
-    {
-        $count = Contract::whereYear('created_at', $year)
-            ->whereMonth('created_at', $month)
-            ->where('contract_number', 'like', "{$prefix}-%")
-            ->count();
-
-        return $count + 1;
-    }
-
-    private function buildContractNumber(string $prefix, int $sequence, string $romanMonth, int $year): string
-    {
-        $sequenceNumber = str_pad($sequence, 3, '0', STR_PAD_LEFT);
-
-        return "{$prefix}-{$sequenceNumber}/SLAB/{$romanMonth}/{$year}";
     }
 
     /**
@@ -339,7 +250,11 @@ class ContractController extends Controller
                 'termination',
                 'parentContract:id,contract_number,title',
                 'versions.creator:id,name',
-            ])->withCount('childContracts')->findOrFail($id);
+            ])->withCount([
+                'childContracts',
+                'childContracts as open_renewal_count' => fn($query) =>
+                    $query->whereIn('status', ['draft', 'review', 'revision', 'approved', 'signed', 'active']),
+            ])->findOrFail($id);
 
             return response()->json([
                 'message' => 'Contract retrieved successfully',
@@ -371,9 +286,17 @@ class ContractController extends Controller
                 'signers',
             ])->findOrFail($id);
 
-            if (!in_array($sourceContract->status, ['active', 'approved', 'expired'], true)) {
+            if (!in_array($sourceContract->status, ['active', 'expired'], true)) {
                 return response()->json([
-                    'message' => 'Hanya kontrak aktif, approved, atau expired yang dapat diperpanjang.',
+                    'message' => 'Hanya kontrak aktif atau berakhir yang dapat dijadikan dasar kontrak baru.',
+                ], 422);
+            }
+
+            if ($sourceContract->childContracts()
+                ->whereIn('status', ['draft', 'review', 'revision', 'approved', 'signed', 'active'])
+                ->exists()) {
+                return response()->json([
+                    'message' => 'Kontrak turunan untuk kontrak ini masih diproses.',
                 ], 422);
             }
 
@@ -389,7 +312,8 @@ class ContractController extends Controller
 
                 $contract = Contract::create([
                     'parent_contract_id' => $sourceContract->id,
-                    'contract_number' => $this->generateContractNumber($categoryId),
+                    'contract_number' => $this->contractNumberController
+                        ->generateContractNumber($categoryId),
                     'external_contract_number' => null,
                     'contract_type' => $sourceContract->contract_type ?? 'internal',
                     'title' => $sourceContract->title,
@@ -1007,4 +931,3 @@ class ContractController extends Controller
         }
     }
 }
-

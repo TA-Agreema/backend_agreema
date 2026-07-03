@@ -43,6 +43,7 @@ class ContractResource extends JsonResource
                 ] : null;
             }),
             'renewal_count' => $this->child_contracts_count ?? 0,
+            'has_open_renewal' => ($this->open_renewal_count ?? 0) > 0,
             'content' => $this->latestVersion?->content ?? $this->template?->content ?? '',
             'status' => $this->mapStatus($this->status),
             'start_date' => $this->start_date?->format('d-m-Y'),
