@@ -81,26 +81,42 @@ class AuthController extends Controller
 
         $user = User::where('email', $request->email)->first();
 
-        if ($user && (!isset($user->is_active) || $user->is_active)) {
-            $plainToken = Str::random(64);
-
-            DB::table('password_reset_tokens')->updateOrInsert(
-                ['email' => $request->email],
-                [
-                    'token' => Hash::make($plainToken),
-                    'created_at' => now(),
+        if (!$user) {
+            return response()->json([
+                'message' => 'Email tidak terdaftar.',
+                'errors' => [
+                    'email' => ['Email tidak terdaftar dalam sistem.'],
                 ],
-            );
-
-            $resetUrl = rtrim(config('app.frontend_url'), '/') .
-                '/reset-password?email=' . urlencode($request->email) .
-                '&token=' . urlencode($plainToken);
-
-            Mail::to($user->email)->send(new PasswordResetMail($user, $resetUrl));
+            ], 422);
         }
 
+        if (isset($user->is_active) && !$user->is_active) {
+            return response()->json([
+                'message' => 'Akun tidak aktif.',
+                'errors' => [
+                    'email' => ['Akun dengan email ini tidak aktif. Hubungi Admin.'],
+                ],
+            ], 422);
+        }
+
+        $plainToken = Str::random(64);
+
+        DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $request->email],
+            [
+                'token' => Hash::make($plainToken),
+                'created_at' => now(),
+            ],
+        );
+
+        $resetUrl = rtrim(config('app.frontend_url'), '/') .
+            '/reset-password?email=' . urlencode($request->email) .
+            '&token=' . urlencode($plainToken);
+
+        Mail::to($user->email)->send(new PasswordResetMail($user, $resetUrl));
+
         return response()->json([
-            'message' => 'Jika email terdaftar, link reset password telah dikirim.',
+            'message' => 'Email terdaftar. Link reset password telah dikirim.',
         ]);
     }
 
