@@ -28,6 +28,7 @@ use App\Http\Requests\Contract\UpdateContractRequest;
 
 class ContractController extends Controller
 {
+    /** Menyediakan generator nomor untuk alur pembuatan dan perpanjangan kontrak. */
     public function __construct(
         private readonly ContractNumberController $contractNumberController,
     ) {}
@@ -447,6 +448,7 @@ class ContractController extends Controller
             ], 500);
         }
     }
+    /** Membentuk nama file PDF yang aman dari nomor atau judul kontrak. */
     private function makePdfFilename(Contract $contract, bool $signed = false): string
     {
         $baseName = $contract->title ?: $contract->contract_number ?: 'kontrak-' . $contract->id;
@@ -748,6 +750,7 @@ class ContractController extends Controller
         }
     }
 
+    /** Menormalisasi nilai field kontrak sebelum disimpan pada versi kontrak. */
     private function normalizeContractFieldValues(array $fieldValues): array
     {
         $normalized = [];
@@ -769,6 +772,7 @@ class ContractController extends Controller
 
         return array_values($normalized);
     }
+    /** Mengumpulkan field wajib yang belum memiliki nilai pada dokumen kontrak. */
     private function getMissingRequiredContractFields(Contract $contract): array
     {
         $latestVersion = $contract->latestVersion()
@@ -809,6 +813,7 @@ class ContractController extends Controller
             ->all();
     }
 
+    /** Mengekstrak ID field yang benar-benar digunakan dari HTML kontrak. */
     private function extractUsedFieldIdsFromContent(string $content): array
     {
         preg_match_all('/data-contract-field-id=["\'](\d+)["\']/', $content, $idMatches);
@@ -830,6 +835,7 @@ class ContractController extends Controller
         return array_values(array_unique($fieldIds));
     }
 
+    /** Menentukan apakah nilai sebuah field wajib masih dianggap kosong. */
     private function isMissingRequiredFieldValue(?string $value, FieldDefinition $field): bool
     {
         $trimmed = trim((string) $value);
