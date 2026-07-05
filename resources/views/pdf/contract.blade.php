@@ -228,7 +228,6 @@
 
         .signature-section {
             margin-top: 40px;
-            border-top: 1px dashed #d1d5db;
             padding-top: 24px;
         }
 
@@ -256,7 +255,6 @@
         }
 
         .signature-box {
-            border: 1px solid #e5e7eb;
             height: 90px;
             background-color: #ffffff;
             margin-bottom: 8px;
@@ -309,25 +307,20 @@
 
     @if ($contract->signers && $contract->signers->count() > 0)
         <div class="signature-section">
-            <p class="signature-title">Tanda Tangan</p>
             <div class="signature-grid">
                 @foreach ($contract->signers as $signer)
                     <div class="signature-item">
                         <div class="signature-box">
                             @if (isset($signatureImages[$signer->id]))
-                                {{-- Gambar TTD di-embed sebagai base64 --}}
                                 <img src="{{ $signatureImages[$signer->id] }}" alt="Tanda tangan">
                             @endif
                         </div>
-                        <p class="signer-name">
+                        <p class="signer-name" style="border-top: 1px solid #000000; padding-top: 6px; margin-top: 6px;">
                             {{ $signer->signer_type === 'internal' ? $signer->user?->name ?? '-' : $signer->signer_name ?? '-' }}
                         </p>
                         <p class="signer-role">
                             {{ $signer->signer_type === 'internal' ? $signer->user?->job_title ?? '' : $signer->signer_role ?? '' }}
                         </p>
-                        {{-- @if ($signer->signer_type === 'external' && $signer->external_email)
-                    <p class="signer-email">{{ $signer->external_email }}</p>
-                @endif --}}
                         @if (isset($signatureDates[$signer->id]))
                             <p class="signer-date">{{ $signatureDates[$signer->id] }}</p>
                         @endif

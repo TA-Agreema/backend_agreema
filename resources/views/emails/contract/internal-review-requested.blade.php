@@ -3,12 +3,10 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Permohonan Peninjauan dan Persetujuan Kontrak</title>
+    <title>Kontrak Membutuhkan Review</title>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }
         .wrapper { max-width: 600px; margin: 32px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-        .button-wrap { text-align: center; margin: 24px 0; }
-        .button { display: inline-block; background: #047857; color: #ffffff !important; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: bold; font-size: 14px; }
 
         .brand { padding: 24px 32px 16px; text-align: center; }
         .brand-logo-img { width: 170px; height: auto; display: inline-block; }
@@ -19,12 +17,15 @@
 
         .body { padding: 32px; color: #374151; }
         .body p { margin: 0 0 16px; line-height: 1.6; }
-        .badge { display: inline-block; background: #fef3c7; color: #d97706; font-weight: bold; padding: 4px 12px; border-radius: 999px; font-size: 14px; margin-bottom: 16px; }
 
-        .warning-box { background: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; padding: 12px 16px; font-size: 13px; color: #92400e; margin: 16px 0; }
         .info-box { background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 16px 20px; margin: 20px 0; }
         .info-box p { margin: 4px 0; font-size: 14px; color: #374151; }
         .info-box strong { color: #047857; }
+
+        .button-wrap { text-align: center; margin: 24px 0; }
+        .button { display: inline-block; background: #047857; color: #ffffff !important; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: bold; font-size: 14px; }
+
+        .note { background: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; padding: 12px 16px; font-size: 13px; color: #92400e; margin: 16px 0; }
 
         .footer { background: #f9fafb; border-top: 1px solid #e5e7eb; padding: 20px 32px; font-size: 12px; color: #9ca3af; text-align: center; }
         .footer .company { font-weight: bold; color: #6b7280; margin-bottom: 4px; }
@@ -32,54 +33,46 @@
 </head>
 <body>
     <div class="wrapper">
-
         <div class="brand">
             @if(file_exists(public_path('LogoAgreema.png')))
-                <img src="{{ $message->embed(public_path('LogoAgreema.png')) }}"
-                     alt="Agreema"
-                     class="brand-logo-img">
+                <img src="{{ $message->embed(public_path('LogoAgreema.png')) }}" alt="Agreema" class="brand-logo-img">
             @else
-                <div class="brand-logo-fallback">A</div>
+                <div class="brand-logo-fallback">Agreema</div>
             @endif
         </div>
 
         <div class="header">
-            <h1>📝 Permohonan Peninjauan dan Persetujuan Kontrak</h1>
+            <h1>📋 Kontrak Membutuhkan Review Anda</h1>
         </div>
 
         <div class="body">
-            <p>Yth. Bapak/Ibu {{ $recipientName ?? 'Mitra' }}.</p>
+            <p>Yth. Bapak/Ibu {{ $recipientName ?? 'Pengguna' }},</p>
 
             <p>
-                Kami mengundang Bapak/Ibu untuk melakukan <strong>peninjauan dan persetujuan</strong>
-                terhadap kontrak berikut yang telah disiapkan untuk Bapak/Ibu.
-            </p>
-
-            <p>
-                Mohon melakukan peninjauan terhadap isi kontrak dan memberikan
-                persetujuan apabila seluruh isi kontrak telah sesuai.
+                Sebuah kontrak baru telah disubmit oleh HRD dan membutuhkan review Bapak/Ibu
+                sebelum diteruskan ke pihak kedua.
             </p>
 
             <div class="info-box">
-                <p><strong>Judul Kontrak</strong></p>
-                <p>{{ $contract->title }}</p>
-                <br/>
                 <p><strong>Nomor Kontrak</strong></p>
                 <p>{{ $contract->contract_number }}</p>
+                <br/>
+                <p><strong>Judul</strong></p>
+                <p>{{ $contract->title }}</p>
+                <br/>
+                <p><strong>Dibuat oleh</strong></p>
+                <p>{{ $contract->creator?->name ?? '-' }}</p>
+                <br/>
+                <p><strong>Tanggal Submit</strong></p>
+                <p>{{ now()->format('d-m-Y H:i') }}</p>
             </div>
 
             <div class="button-wrap">
-                <a href="{{ $signingUrl }}" class="button">Tinjau Kontrak</a>
+                <a href="{{ $reviewUrl }}" class="button">Buka &amp; Review Kontrak</a>
             </div>
 
-            <div class="warning-box">
-                <p>
-                    <strong>Perhatian:</strong><br>
-                    Link ini bersifat rahasia, hanya dapat digunakan untuk memberikan tanggapan
-                    <strong>satu kali</strong>, dan akan kedaluwarsa dalam
-                    <strong>7 hari</strong>.
-                    Mohon untuk tidak membagikan tautan ini kepada pihak lain yang tidak memiliki wewenang atas dokumen ini.
-                </p>
+            <div class="note">
+                <strong>Catatan:</strong> Anda dapat menyetujui kontrak atau meminta revisi kepada HRD disertai catatan perbaikan.
             </div>
 
             <p>Terima kasih atas perhatian dan kerja samanya.</p>
@@ -89,7 +82,6 @@
             <p class="company">PT. Solutionlab Grup Indonesia</p>
             <p>Email ini dikirim otomatis oleh sistem Agreema. Mohon tidak membalas email ini.</p>
         </div>
-
     </div>
 </body>
 </html>

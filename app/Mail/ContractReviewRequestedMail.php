@@ -16,6 +16,7 @@ class ContractReviewRequestedMail extends Mailable
     public function __construct(
         public readonly Contract $contract,
         public readonly string   $reviewUrl,
+        public readonly string   $recipientName,
     ) {}
 
     public function envelope(): Envelope
@@ -32,6 +33,7 @@ class ContractReviewRequestedMail extends Mailable
             with: [
                 'contract'  => $this->contract,
                 'reviewUrl' => $this->reviewUrl,
+                'recipientName' => $this->recipientName,
             ],
         );
     }

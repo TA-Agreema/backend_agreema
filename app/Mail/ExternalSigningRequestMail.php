@@ -15,25 +15,27 @@ class ExternalSigningRequestMail extends Mailable
 
     public function __construct(
         public readonly Contract $contract,
-        public readonly string   $signingUrl,
-        public readonly int      $iteration,
+        public readonly string $signingUrl,
+        public readonly int $iteration,
+        public readonly string $recipientName,
     ) {}
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: "[Iterasi {$this->iteration}] Permintaan Review Kontrak: {$this->contract->contract_number}",
+            subject: "Permohonan Peninjauan Dokumen - {$this->contract->title}",
         );
     }
 
     public function content(): Content
     {
         return new Content(
-            markdown: 'emails.contract.external-signing-request',
+            view: 'emails.contract.external-signing-request',
             with: [
-                'contract'   => $this->contract,
+                'contract' => $this->contract,
                 'signingUrl' => $this->signingUrl,
-                'iteration'  => $this->iteration,
+                'iteration' => $this->iteration,
+                'recipientName' => $this->recipientName,
             ],
         );
     }

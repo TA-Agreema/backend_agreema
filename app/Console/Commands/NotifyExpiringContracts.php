@@ -27,7 +27,6 @@ class NotifyExpiringContracts extends Command
 
             foreach ($contracts as $contract) {
                 $endDate = $contract->end_date->locale('id')->isoFormat('D MMMM YYYY');
-                $message = "{$contract->title} akan berakhir pada tanggal {$endDate} ({$days} hari lagi). Segera lakukan perpanjangan kontrak jika diperlukan.";
 
                 // Notifikasi ke HRD
                 // Cek apakah notifikasi hari ini sudah pernah dikirim (hindari duplikasi)
@@ -43,7 +42,7 @@ class NotifyExpiringContracts extends Command
                         'user_id'     => $contract->created_by,
                         'contract_id' => $contract->id,
                         'type'        => 'contract_expiring',
-                        'message'     => $message,
+                        'message'     => "{$contract->title} akan berakhir pada tanggal {$endDate} ({$days} hari lagi). Segera lakukan perpanjangan kontrak jika diperlukan.",
                         'is_read'     => false,
                     ]);
 
@@ -54,7 +53,7 @@ class NotifyExpiringContracts extends Command
                                 'user_id'     => $signer->user_id,
                                 'contract_id' => $contract->id,
                                 'type'        => 'contract_expiring',
-                                'message'     => $message,
+                                'message'     => "{$contract->title} akan berakhir pada tanggal {$endDate} ({$days} hari lagi). Segera hubungi pembuat kontrak untuk melakukan perpanjangan jika diperlukan.",
                                 'is_read'     => false,
                             ]);
                         }
