@@ -57,9 +57,7 @@ class UserController extends Controller
                     'is_active' => $request->is_active ?? true,
                 ]);
 
-                if ($request->has('roles')) {
-                    $user->syncRoles($request->roles);
-                }
+                $user->syncRoles([$request->role]);
             });
 
             return new UserResource($user);
@@ -162,15 +160,12 @@ class UserController extends Controller
     {
         try {
             $request->validate([
-                'roles' => 'required|array',
-                'roles.*' => 'string|exists:roles,name',
+                'role' => 'required|string|exists:roles,name',
             ]);
 
             DB::transaction(function () use ($request, $id, &$user) {
                 $user = User::findOrFail($id);
-                if ($request->has('roles')) {
-                    $user->syncRoles($request->roles);
-                }
+                $user->syncRoles([$request->role]);
             });
 
             return new UserResource($user);
@@ -178,7 +173,7 @@ class UserController extends Controller
             Log::error('Error updating User roles', [
                 'user_id' => $id,
                 'error' => $e->getMessage(),
-                'roles' => $request->roles,
+                'role' => $request->role,
             ]);
 
             return response()->json([

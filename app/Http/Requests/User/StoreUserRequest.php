@@ -33,8 +33,7 @@ class StoreUserRequest extends FormRequest
             'job_title' => 'nullable|string|max:255',
             'department' => 'nullable|string|max:255',
             'is_active' => 'nullable|boolean',
-            'roles' => 'required|array',
-            'roles.*' => 'string|exists:roles,name',
+            'role' => 'required|string|exists:roles,name',
         ];
     }
 
