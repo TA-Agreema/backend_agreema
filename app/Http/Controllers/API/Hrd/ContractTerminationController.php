@@ -12,6 +12,9 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\ContractTerminatingMail;
+use App\Mail\ContractTerminatedMail;
 use App\Http\Controllers\Controller;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
@@ -134,6 +137,43 @@ class ContractTerminationController extends Controller
                         ]);
                     }
                 }
+
+                // Email ke eksternal
+                foreach ($contract->signers as $signer) {
+                if (
+                    $signer->signer_type === 'external' &&
+                    !empty($signer->external_email)
+                ) {
+                    try {
+                        Mail::to($signer->external_email)->send(
+                            $isToday
+                                ? new ContractTerminatedMail(
+                                    $contract,
+                                    $signer->signer_name,
+                                    $reasonLabel,
+                                    $effectiveDateStr
+                                )
+                                : new ContractTerminatingMail(
+                                    $contract,
+                                    $signer->signer_name,
+                                    $reasonLabel,
+                                    $effectiveDateStr
+                                )
+                        );
+
+                        Log::info('Email terminasi berhasil dikirim', [
+                            'email' => $signer->external_email,
+                            'contract_id' => $contract->id,
+                        ]);
+                    } catch (\Exception $e) {
+                        Log::error('Gagal mengirim email terminasi', [
+                            'email' => $signer->external_email,
+                            'contract_id' => $contract->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            }
                 return $termination;
             });
 
