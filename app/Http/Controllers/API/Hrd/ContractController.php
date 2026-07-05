@@ -926,7 +926,7 @@ class ContractController extends Controller
 
             try {
                 Mail::to($signer->external_email)
-                    ->send(new ExternalSigningRequestMail($contract, $signingUrl, $iteration));
+                    ->send(new ExternalSigningRequestMail($contract, $signingUrl, $iteration, $signer->signer_name));
             } catch (Exception $e) {
                 Log::error('Gagal mengirim email external signing', [
                     'contract_id' => $contract->id,
