@@ -225,12 +225,12 @@ class ExternalContractController extends Controller
                             ? $contract->start_date->locale('id')->isoFormat('D MMMM YYYY')
                             : '(belum ditentukan)';
 
-                        // Notifikasi ke HRD — kontrak belum aktif
+                            // Notifikasi ke HRD — kontrak belum aktif
                             Notification::create([
                                 'user_id'     => $contract->created_by,
                                 'contract_id' => $contract->id,
                                 'type'        => 'external_approved',
-                                'message'     => "Pihak kedua telah menyetujui {$contract->title} yang diunggah oleh {$signerItem->user_id}. Kontrak sudah sah dan akan aktif pada tanggal {$startDate}.",
+                                'message'     => "Pihak kedua telah menyetujui {$contract->title}. Kontrak sudah sah dan akan aktif pada tanggal {$startDate}.",
                                 'is_read'     => false,
                             ]);
 
