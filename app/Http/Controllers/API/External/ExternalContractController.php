@@ -205,7 +205,7 @@ class ExternalContractController extends Controller
                             'user_id'     => $contract->created_by,
                             'contract_id' => $contract->id,
                             'type'        => 'contract_activated',
-                            'message'     => "Kedua belah pihak telah mengesahkan {$contract->title}. Kontrak sudah sah danakan aktif sampai pada tanggal {$endDate}.",
+                            'message'     => "Kedua belah pihak telah mengesahkan {$contract->title}. Kontrak sudah sah dan akan aktif sampai pada tanggal {$endDate}.",
                             'is_read'     => false,
                         ]);
 

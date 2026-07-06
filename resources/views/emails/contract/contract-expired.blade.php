@@ -44,21 +44,18 @@
 
             @if($role === 'creator')
                 <p>
-                    Kami ingin memberitahukan bahwa kontrak yang Bapak/Ibu buat berikut ini telah melewati
-                    tanggal berakhirnya dan statusnya kini berubah menjadi <strong>Kedaluwarsa</strong>.
-                    Sebagai pembuat kontrak, mohon segera melakukan tindak lanjut perpanjangan apabila diperlukan.
+                    Kami ingin memberitahukan bahwa kontrak berikut ini telah melewati
+                    tanggal berakhirnya dan statusnya kini berubah menjadi <strong>berakhir</strong>.
                 </p>
             @elseif($role === 'internal')
                 <p>
                     Kami ingin memberitahukan bahwa kontrak berikut, yang telah Bapak/Ibu setujui dan tanda tangani,
-                    telah melewati tanggal berakhirnya dan statusnya kini <strong>Kedaluwarsa</strong>.
-                    Apabila diperlukan perpanjangan, mohon menghubungi pembuat kontrak terkait untuk tindak lanjut.
+                    telah melewati tanggal berakhirnya dan statusnya kini menjadi <strong>berakhir</strong>.
                 </p>
             @else
                 <p>
                     Kami ingin memberitahukan bahwa kontrak kerja sama berikut antara Bapak/Ibu dengan kami
-                    telah melewati tanggal berakhirnya. Apabila Bapak/Ibu berkenan untuk memperpanjang
-                    kerja sama ini, mohon menghubungi kontak kami agar dapat segera ditindaklanjuti.
+                    telah melewati tanggal berakhirnya.
                 </p>
             @endif
 
@@ -80,8 +77,7 @@
                 </p>
             @else
                 <p>
-                    Silakan login ke sistem Agreema untuk melihat detail kontrak dan melakukan
-                    tindak lanjut yang diperlukan.
+                    Silakan login ke sistem Agreema untuk melihat detail kontrak.
                 </p>
             @endif
 
