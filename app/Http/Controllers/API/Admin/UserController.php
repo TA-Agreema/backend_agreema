@@ -4,7 +4,6 @@ namespace App\Http\Controllers\API\Admin;
 
 use Exception;
 use App\Models\User;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
@@ -156,30 +155,4 @@ class UserController extends Controller
         }
     }
 
-    public function updateUserRoles(Request $request, $id)
-    {
-        try {
-            $request->validate([
-                'role' => 'required|string|exists:roles,name',
-            ]);
-
-            DB::transaction(function () use ($request, $id, &$user) {
-                $user = User::findOrFail($id);
-                $user->syncRoles([$request->role]);
-            });
-
-            return new UserResource($user);
-        } catch (Exception $e) {
-            Log::error('Error updating User roles', [
-                'user_id' => $id,
-                'error' => $e->getMessage(),
-                'role' => $request->role,
-            ]);
-
-            return response()->json([
-                'message' => 'An error occurred while updating user roles',
-                'error' => $e->getMessage(),
-            ], 500);
-        }
-    }
 }

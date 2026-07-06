@@ -27,7 +27,6 @@ class PermissionSeeder extends Seeder
             'read.user',
             'update.user',
             'delete.user',
-            'update.user.roles',
             'update.user.status',
             'read.permission',
             // Contract Category permissions

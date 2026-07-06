@@ -35,8 +35,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/show-user/{id}', [UserController::class, 'show'])->middleware(('permission:read.user')); //melihat detail user
         Route::patch('/update-user/{id}', [UserController::class, 'update'])->middleware(('permission:update.user')); //mengupdate detail user
         Route::delete('/delete-user/{id}', [UserController::class, 'destroy'])->middleware(('permission:delete.user')); //menghapus user
-        Route::patch('/update-user-roles/{id}', [UserController::class, 'updateUserRoles'])->middleware(('permission:update.user.roles')); //mengupdate roles user
-
         Route::get('/roles', [UserRoleController::class, 'index'])->middleware(('permission:read.all.roles|read.permission')); //melihat daftar keseluruhan roles
         Route::post('/add-roles', [UserRoleController::class, 'store'])->middleware(('permission:create.role')); //menambah roles baru
         Route::get('/show-roles/{id}', [UserRoleController::class, 'show'])->middleware(('permission:read.role')); //melihat detail roles

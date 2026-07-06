@@ -152,6 +152,19 @@ class UserRoleController extends Controller
     {
         try {
             $role = Role::findById($id, 'web');
+
+            $assignedUserCount = DB::table('model_has_roles')
+                ->where('role_id', $role->id)
+                ->where('model_type', User::class)
+                ->count();
+
+            if ($assignedUserCount > 0) {
+                return response()->json([
+                    'message' => 'Role tidak dapat dihapus karena masih digunakan oleh user.',
+                    'users_count' => $assignedUserCount,
+                ], 422);
+            }
+
             $role->delete();
 
             return response()->json([
