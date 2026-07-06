@@ -725,12 +725,10 @@ class ContractController extends Controller
             }
             $signers = ContractSigner::where('contract_id', $id)->get();
 
-            $hasInternal = $signers->where('signer_type', 'internal')->isNotEmpty();
-            $hasExternal = $signers->where('signer_type', 'external')->isNotEmpty();
-
-            if (!$hasInternal) {
+            $signerCompositionError = $this->validateSubmitSignerComposition($signers);
+            if ($signerCompositionError) {
                 return response()->json([
-                    'message' => 'Contract must have at least one internal and one external signer before submission',
+                    'message' => $signerCompositionError,
                 ], 422);
             }
 
@@ -890,6 +888,38 @@ class ContractController extends Controller
         return $trimmed === '' ||
             strcasecmp($trimmed, '[' . $field->field_label . ']') === 0 ||
             preg_match('/^{{\s*' . preg_quote($field->field_key, '/') . '\s*}}$/i', $trimmed);
+    }
+
+    /**
+     * Validasi final sebelum submit: kontrak harus memiliki tepat 2 signer,
+     * dengan kombinasi 2 internal atau 1 internal + 1 eksternal.
+     */
+    private function validateSubmitSignerComposition($signers): ?string
+    {
+        $total = $signers->count();
+        $internalCount = $signers->where('signer_type', 'internal')->count();
+        $externalCount = $signers->where('signer_type', 'external')->count();
+
+        if ($total !== 2) {
+            return 'Kontrak harus memiliki tepat 2 penandatangan sebelum diajukan.';
+        }
+
+        $validComposition = ($internalCount === 2 && $externalCount === 0)
+            || ($internalCount === 1 && $externalCount === 1);
+
+        if (!$validComposition) {
+            return 'Kombinasi penandatangan hanya boleh 2 internal atau 1 internal dan 1 eksternal.';
+        }
+
+        $invalidInternalSigner = $signers->first(function ($signer) {
+            return $signer->signer_type === 'internal' && !$signer->user_id;
+        });
+
+        if ($invalidInternalSigner) {
+            return 'Penandatangan internal wajib terhubung dengan akun user yang valid.';
+        }
+
+        return null;
     }
 
     /**
