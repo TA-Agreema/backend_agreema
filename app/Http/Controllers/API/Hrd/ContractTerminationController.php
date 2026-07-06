@@ -11,6 +11,7 @@ use App\Http\Resources\Termination\TerminationResource;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\ContractTerminatingMail;
@@ -30,6 +31,10 @@ class ContractTerminationController extends Controller
     {
         try {
             $contract = Contract::findOrFail($id);
+
+            if (Gate::denies('view', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
 
             $termination = $contract->termination;
 
@@ -55,6 +60,10 @@ class ContractTerminationController extends Controller
 
         try {
             $contract = Contract::findOrFail($id);
+
+            if (Gate::denies('createTermination', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
 
             if ($contract->termination()->exists()) {
                 return response()->json([
@@ -215,14 +224,18 @@ class ContractTerminationController extends Controller
     public function destroy(int $contractId, int $terminationId): JsonResponse
     {
         try {
+            $contract = Contract::findOrFail($contractId);
+            if (Gate::denies('deleteTermination', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
+
             $termination = ContractTermination::where('contract_id', $contractId)
                 ->findOrFail($terminationId);
 
-            DB::transaction(function () use ($termination, $contractId) {
+            DB::transaction(function () use ($termination, $contract) {
                 $termination->delete();
 
                 // Kembalikan status kontrak ke active jika terminasi dihapus
-                $contract = Contract::findOrFail($contractId);
                 $contract->update(['status' => 'active']);
             });
 
@@ -233,5 +246,12 @@ class ContractTerminationController extends Controller
             Log::error('Delete termination error', ['termination_id' => $terminationId, 'error' => $e->getMessage()]);
             return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
         }
+    }
+
+    private function forbiddenContractResponse(): JsonResponse
+    {
+        return response()->json([
+            'message' => 'Anda tidak memiliki akses ke kontrak ini.',
+        ], 403);
     }
 }

@@ -16,6 +16,7 @@ use App\Models\ExternalSignatureToken;
 use App\Mail\ExternalSigningRequestMail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use App\Http\Controllers\Controller;
@@ -64,6 +65,17 @@ class ContractController extends Controller
             if (!$request->boolean('include_external')) {
                 $query->where('contract_type', 'internal');
             };
+
+            $user = $request->user();
+            if (!$user->hasRole('admin')) {
+                $query->where(function ($q) use ($user) {
+                    $q->where('created_by', $user->id)
+                        ->orWhereHas('signers', function ($signerQuery) use ($user) {
+                            $signerQuery->where('signer_type', 'internal')
+                                ->where('user_id', $user->id);
+                        });
+                });
+            }
 
             // filter berdasarkan parameter 'archive'
             if ($request->boolean('archive')) {
@@ -135,6 +147,13 @@ class ContractController extends Controller
                     ? Template::find($validated['template_id'])
                     : null;
                 $validated['paper_size'] = $template?->paper_size ?? 'f4';
+            }
+
+            if (!empty($validated['parent_contract_id'])) {
+                $parentContract = Contract::findOrFail($validated['parent_contract_id']);
+                if (Gate::denies('view', $parentContract)) {
+                    return $this->forbiddenContractResponse();
+                }
             }
 
             $contract = DB::transaction(function () use ($validated) {
@@ -257,6 +276,10 @@ class ContractController extends Controller
                     $query->whereIn('status', ['draft', 'review', 'revision', 'approved', 'signed', 'active']),
             ])->findOrFail($id);
 
+            if (Gate::denies('view', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
+
             return response()->json([
                 'message' => 'Contract retrieved successfully',
                 'data' => new ContractResource($contract),
@@ -286,6 +309,10 @@ class ContractController extends Controller
                 'latestVersion.fieldValues',
                 'signers',
             ])->findOrFail($id);
+
+            if (Gate::denies('view', $sourceContract)) {
+                return $this->forbiddenContractResponse();
+            }
 
             if (!in_array($sourceContract->status, ['active', 'expired'], true)) {
                 return response()->json([
@@ -408,6 +435,10 @@ class ContractController extends Controller
                 'template.category:id,name',
             ])->findOrFail($id);
 
+            if (Gate::denies('view', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
+
             if ($contract->signed_document_path) {
                 $filePath = storage_path('app/public/' . $contract->signed_document_path);
                 if (file_exists($filePath)) {
@@ -471,6 +502,10 @@ class ContractController extends Controller
         try {
             $contract = Contract::findOrFail($id);
             $validated = $request->validated();
+
+            if (Gate::denies('update', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
 
             if (!in_array($contract->status, ['draft', 'revision'])) {
                 return response()->json([
@@ -595,6 +630,10 @@ class ContractController extends Controller
         try {
             $contract = Contract::findOrFail($id);
 
+            if (Gate::denies('delete', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
+
             $contract->delete();
 
             return response()->json([
@@ -622,6 +661,10 @@ class ContractController extends Controller
         try {
             $contract = Contract::findOrFail($id);
             $validated = $request->validated();
+
+            if (Gate::denies('update', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
 
             if (!array_key_exists('status', $validated)) {
                 return response()->json([
@@ -658,6 +701,10 @@ class ContractController extends Controller
     {
         try {
             $contract = Contract::findOrFail($id);
+
+            if (Gate::denies('submit', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
 
             if ($contract->status !== 'draft' && $contract->status !== 'revision') {
                 return response()->json([
@@ -857,6 +904,10 @@ class ContractController extends Controller
         try {
             $contract = Contract::with('signers')->findOrFail($id);
 
+            if (Gate::denies('submit', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
+
             if (!in_array($contract->status, ['approved', 'review'])) {
                 return response()->json([
                     'message' => 'Hanya kontrak yang sedang menunggu tanda tangan eksternal yang dapat dikirim ulang.',
@@ -935,5 +986,12 @@ class ContractController extends Controller
                 ]);
             }
         }
+    }
+
+    private function forbiddenContractResponse(): JsonResponse
+    {
+        return response()->json([
+            'message' => 'Anda tidak memiliki akses ke kontrak ini.',
+        ], 403);
     }
 }
