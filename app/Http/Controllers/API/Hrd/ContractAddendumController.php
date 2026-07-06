@@ -11,6 +11,7 @@ use App\Http\Resources\Addendum\AddendumResource;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -25,6 +26,10 @@ class ContractAddendumController extends Controller
     {
         try {
             $contract = Contract::findOrFail($id);
+
+            if (Gate::denies('view', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
 
             $addendums = $contract->addendums()
                 ->orderByDesc('created_at')
@@ -52,6 +57,10 @@ class ContractAddendumController extends Controller
 
         try {
             $contract = Contract::findOrFail($id);
+
+            if (Gate::denies('createAddendum', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
 
             // Kontrak harus sudah aktif atau sudah disetujui internal (approved) sebelum addendum dapat dibuat
             if (!in_array($contract->status, ['active'])) {
@@ -121,6 +130,11 @@ class ContractAddendumController extends Controller
     public function destroy(int $contractId, int $addendumId): JsonResponse
     {
         try {
+            $contract = Contract::findOrFail($contractId);
+            if (Gate::denies('deleteAddendum', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
+
             $addendum = ContractAddendum::where('contract_id', $contractId)
                 ->findOrFail($addendumId);
 
@@ -133,5 +147,12 @@ class ContractAddendumController extends Controller
             Log::error('Delete addendum error', ['addendum_id' => $addendumId, 'error' => $e->getMessage()]);
             return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
         }
+    }
+
+    private function forbiddenContractResponse(): JsonResponse
+    {
+        return response()->json([
+            'message' => 'Anda tidak memiliki akses ke kontrak ini.',
+        ], 403);
     }
 }

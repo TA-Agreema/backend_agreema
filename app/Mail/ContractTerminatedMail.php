@@ -5,38 +5,43 @@ namespace App\Mail;
 use App\Models\Contract;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+use Illuminate\Queue\SerializesModels;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
-use Illuminate\Queue\SerializesModels;
 
-class ExternalSigningRequestMail extends Mailable
+class ContractTerminatedMail extends Mailable
 {
     use Queueable, SerializesModels;
 
     public function __construct(
         public readonly Contract $contract,
-        public readonly string $signingUrl,
-        public readonly int $iteration,
         public readonly string $recipientName,
+        public readonly string $reason,
+        public readonly string $effectiveDate,
     ) {}
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: "Permohonan Peninjauan Dokumen - {$this->contract->title}",
+            subject: "[Kontrak Telah Dihentikan] {$this->contract->title}",
         );
     }
 
     public function content(): Content
     {
         return new Content(
-            view: 'emails.contract.external-signing-request',
+            view: 'emails.contract.contract-terminated',
             with: [
-                'contract' => $this->contract,
-                'signingUrl' => $this->signingUrl,
-                'iteration' => $this->iteration,
+                'contract'      => $this->contract,
                 'recipientName' => $this->recipientName,
+                'reason'        => $this->reason,
+                'effectiveDate' => $this->effectiveDate,
             ],
         );
+    }
+
+    public function attachments(): array
+    {
+        return [];
     }
 }

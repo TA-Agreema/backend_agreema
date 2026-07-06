@@ -20,7 +20,6 @@ use Illuminate\Support\Facades\Mail;
 use App\Models\ExternalSignatureToken;
 use App\Models\ContractSignerSignature;
 use Illuminate\Support\Facades\Storage;
-// use App\Mail\ExternalSigningRequestMail;
 use App\Http\Resources\Contract\ContractResource;
 
 class ExternalContractController extends Controller
@@ -319,7 +318,7 @@ class ExternalContractController extends Controller
                             'user_id'     => $contract->created_by,
                             'contract_id' => $contract->id,
                             'type'        => 'external_revision_requested',
-                            'message'     => "Pihak kedua meminta revisi {$contract->title}. Alasan: {$notes}",
+                            'message'     => "Revisi diminta oleh pihak kedua untuk {$contract->title}. Silahkan cek detail kontrak untuk melihat catatan dan dokumen revisi yang dikirimkan.",
                             'is_read'     => false,
                         ]);
 
@@ -330,7 +329,7 @@ class ExternalContractController extends Controller
                                     'user_id'     => $signer->user_id,
                                     'contract_id' => $contract->id,
                                     'type'        => 'external_revision_requested',
-                                    'message'     => "{$contract->title} memiliki revisi dari pihak kedua. Alasan: {$notes}",
+                                    'message'     => "Revisi diminta oleh pihak kedua untuk {$contract->title}. Silahkan cek detail kontrak untuk melihat catatan dan dokumen revisi yang dikirimkan.",
                                     'is_read'     => false,
                                 ]);
                             }

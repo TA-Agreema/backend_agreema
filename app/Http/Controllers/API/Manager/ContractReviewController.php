@@ -324,7 +324,7 @@ class ContractReviewController extends Controller
                 'token' => $token,
                 'iteration' => $iteration,
                 'review_status' => 'pending',
-                'expired_at' => now()->addMinutes(3), // untuk testing
+                'expired_at' => now()->addHours(1), // untuk testing
             ]);
 
             // Kirim email
@@ -333,7 +333,7 @@ class ContractReviewController extends Controller
 
             try {
                 Mail::to($signer->external_email)
-                    ->send(new ExternalSigningRequestMail($contract, $signingUrl, $iteration));
+                    ->send(new ExternalSigningRequestMail($contract, $signingUrl, $iteration, $signer->signer_name));
             } catch (Exception $e) {
                 Log::error('Gagal mengirim email external signing', [
                     'contract_id' => $contract->id,
@@ -563,15 +563,22 @@ class ContractReviewController extends Controller
     public function download(int $id)
     {
         try {
+            $user = Auth::user();
+            $this->ensureIsAssignedSigner($id, $user->id);
+
             $contract = Contract::with([
                 'latestVersion',
                 'creator:id,name',
                 'signers.user:id,name,job_title',
+                'signers.signatures',
                 'template.category:id,name',
             ])->findOrFail($id);
 
-            // ← Kalau sudah ada dokumen fisik yang diupload, kembalikan.
-            if ($contract->signed_document_path) {
+
+            // Hanya return signed document kalau itu hasil upload manual (bukan generate otomatis)
+            // Cek dari signed_document_path yang mengandung 'signed-documents' (upload manual)
+            if ($contract->signed_document_path &&
+                str_contains($contract->signed_document_path, 'signed-documents')) {
                 $filePath = storage_path('app/public/' . $contract->signed_document_path);
                 if (file_exists($filePath)) {
                     $filename = ($contract->title ?? 'kontrak-' . $id) . '-signed.pdf';
@@ -581,11 +588,11 @@ class ContractReviewController extends Controller
                 }
             }
 
-            // Fallback: generate dari template
+            // Selalu generate fresh PDF dari konten terbaru
             $content = $contract->latestVersion?->content ?? '<p>Konten tidak tersedia.</p>';
             $html = view('pdf.contract', [
                 'contract' => $contract,
-                'content' => $content,
+                'content'  => $content,
             ])->render();
 
             $pdf = Pdf::loadHTML($html)
@@ -600,6 +607,8 @@ class ContractReviewController extends Controller
             $filename = preg_replace('/[\/\\\\]/', '-', $filename);
 
             return $pdf->download($filename);
+        } catch (AuthorizationException $e) {
+            return response()->json(['message' => $e->getMessage()], 403);
         } catch (Exception $e) {
             Log::error('Manager: error downloading contract PDF', ['contract_id' => $id, 'error' => $e->getMessage()]);
             return response()->json([
@@ -726,7 +735,7 @@ class ContractReviewController extends Controller
                 'token' => $token,
                 'iteration' => $iteration,
                 'review_status' => 'pending',
-                'expired_at' => now()->addMinutes(3), // untuk testing
+                'expired_at' => now()->addHour(1), // untuk testing
             ]);
 
             // URL konfirmasi (bukan URL TTD)
@@ -736,7 +745,7 @@ class ContractReviewController extends Controller
                 // Gunakan ExternalSigningRequestMail yang sudah ada,
                 // atau buat ExternalConfirmationMail baru jika ingin teks berbeda
                 Mail::to($signer->external_email)
-                    ->send(new ExternalSigningRequestMail($contract, $confirmUrl, $iteration));
+                    ->send(new ExternalSigningRequestMail($contract, $confirmUrl, $iteration, $signer->signer_name));
             } catch (Exception $e) {
                 Log::error('Gagal mengirim email konfirmasi eksternal', [
                     'contract_id' => $contract->id,

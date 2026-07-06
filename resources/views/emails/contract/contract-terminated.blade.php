@@ -3,12 +3,10 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Permohonan Peninjauan dan Persetujuan Kontrak</title>
+    <title>Kontrak Resmi Dihentikan</title>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }
         .wrapper { max-width: 600px; margin: 32px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-        .button-wrap { text-align: center; margin: 24px 0; }
-        .button { display: inline-block; background: #047857; color: #ffffff !important; text-decoration: none; padding: 12px 28px; border-radius: 6px; font-weight: bold; font-size: 14px; }
 
         .brand { padding: 24px 32px 16px; text-align: center; }
         .brand-logo-img { width: 170px; height: auto; display: inline-block; }
@@ -19,9 +17,8 @@
 
         .body { padding: 32px; color: #374151; }
         .body p { margin: 0 0 16px; line-height: 1.6; }
-        .badge { display: inline-block; background: #fef3c7; color: #d97706; font-weight: bold; padding: 4px 12px; border-radius: 999px; font-size: 14px; margin-bottom: 16px; }
+        .badge { display: inline-block; background: #fec7c7; color: #d90606; font-weight: bold; padding: 4px 12px; border-radius: 999px; font-size: 14px; margin-bottom: 16px; }
 
-        .warning-box { background: #fef3c7; border: 1px solid #fde68a; border-radius: 6px; padding: 12px 16px; font-size: 13px; color: #92400e; margin: 16px 0; }
         .info-box { background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 16px 20px; margin: 20px 0; }
         .info-box p { margin: 4px 0; font-size: 14px; color: #374151; }
         .info-box strong { color: #047857; }
@@ -32,64 +29,75 @@
 </head>
 <body>
     <div class="wrapper">
-
         <div class="brand">
             @if(file_exists(public_path('LogoAgreema.png')))
-                <img src="{{ $message->embed(public_path('LogoAgreema.png')) }}"
-                     alt="Agreema"
-                     class="brand-logo-img">
+                <img src="{{ $message->embed(public_path('LogoAgreema.png')) }}" alt="Agreema" class="brand-logo-img">
             @else
-                <div class="brand-logo-fallback">A</div>
+                <div class="brand-logo-fallback">Agreema</div>
             @endif
         </div>
 
         <div class="header">
-            <h1>📝 Permohonan Peninjauan dan Persetujuan Kontrak</h1>
+            <h1>⚠️ Pemberitahuan Terminasi Kontrak</h1>
         </div>
 
         <div class="body">
-            <p>Yth. Bapak/Ibu {{ $recipientName ?? 'Mitra' }}.</p>
+            <p>Yth. Bapak/Ibu {{ $recipientName }}</p>
+
+            <span class="badge">Kontrak Resmi Dihentikan</span>
 
             <p>
-                Kami mengundang Bapak/Ibu untuk melakukan <strong>peninjauan dan persetujuan</strong>
-                terhadap kontrak berikut yang telah disiapkan untuk Bapak/Ibu.
-            </p>
-
-            <p>
-                Mohon melakukan peninjauan terhadap isi kontrak dan memberikan
-                persetujuan apabila seluruh isi kontrak telah sesuai.
+                Kami ingin memberitahukan bahwa kontrak berikut telah resmi dihentikan
+                sesuai dengan tanggal efektif terminasi yang telah ditetapkan.
             </p>
 
             <div class="info-box">
+
                 <p><strong>Judul Kontrak</strong></p>
                 <p>{{ $contract->title }}</p>
-                <br/>
+
+                <br>
+
                 <p><strong>Nomor Kontrak</strong></p>
                 <p>{{ $contract->contract_number }}</p>
+
+                <br>
+
+                <p><strong>Tanggal Terminasi</strong></p>
+                <p>{{ $effectiveDate }}</p>
+
+                <br>
+
+                <p><strong>Alasan Terminasi</strong></p>
+                <p>{{ $reason }}</p>
+
             </div>
 
-            <div class="button-wrap">
-                <a href="{{ $signingUrl }}" class="button">Tinjau Kontrak</a>
-            </div>
+            <p>
+                Per tanggal
+                <strong>{{ $effectiveDate }}</strong>,
+                kontrak tersebut telah berstatus
+                <strong>dihentikan</strong> dan tidak lagi berlaku.
+            </p>
 
-            <div class="warning-box">
-                <p>
-                    <strong>Perhatian:</strong><br>
-                    Link ini bersifat rahasia, hanya dapat digunakan untuk memberikan tanggapan
-                    <strong>satu kali</strong>, dan akan kedaluwarsa dalam
-                    <strong>7 hari</strong>.
-                    Mohon untuk tidak membagikan tautan ini kepada pihak lain yang tidak memiliki wewenang atas dokumen ini.
-                </p>
-            </div>
+            <p>
+                Seluruh hak dan kewajiban yang timbul berdasarkan kontrak ini
+                berakhir sesuai ketentuan yang berlaku serta kesepakatan para pihak.
+            </p>
 
-            <p>Terima kasih atas perhatian dan kerja samanya.</p>
-        </div>
+            <p>
+                Apabila memerlukan informasi lebih lanjut terkait terminasi kontrak ini,
+                silakan menghubungi pihak yang mengajukan kontrak.
+            </p>
+
+            <p>
+                Terima kasih atas perhatian dan kerja samanya.
+            </p>
 
         <div class="footer">
             <p class="company">PT. Solutionlab Grup Indonesia</p>
             <p>Email ini dikirim otomatis oleh sistem Agreema. Mohon tidak membalas email ini.</p>
         </div>
-
     </div>
 </body>
 </html>

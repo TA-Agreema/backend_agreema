@@ -11,7 +11,11 @@ use App\Http\Resources\Termination\TerminationResource;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\ContractTerminatingMail;
+use App\Mail\ContractTerminatedMail;
 use App\Http\Controllers\Controller;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
@@ -27,6 +31,10 @@ class ContractTerminationController extends Controller
     {
         try {
             $contract = Contract::findOrFail($id);
+
+            if (Gate::denies('view', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
 
             $termination = $contract->termination;
 
@@ -53,6 +61,16 @@ class ContractTerminationController extends Controller
         try {
             $contract = Contract::findOrFail($id);
 
+            if (Gate::denies('createTermination', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
+
+            if ($contract->termination()->exists()) {
+                return response()->json([
+                    'message' => 'Terminasi untuk kontrak ini sudah pernah dibuat.',
+                ], 422);
+            }
+
             if ($contract->status !== 'active') {
                 return response()->json([
                     'message' => 'Terminasi hanya dapat dibuat untuk kontrak yang sedang aktif.',
@@ -69,16 +87,16 @@ class ContractTerminationController extends Controller
             $today = \Carbon\Carbon::today();
 
             $reasonLabels = [
-                    'mutual_agreement'   => 'Kesepakatan Bersama',
-                    'breach_of_contract' => 'Pelanggaran Kontrak',
-                    'force_majeure'      => 'Force Majeure',
-                    'expiration'         => 'Berakhirnya Masa Kontrak',
-                    'other'              => 'Lainnya',
-                ];
+                'mutual_agreement'   => 'Kesepakatan Bersama',
+                'breach_of_contract' => 'Pelanggaran Kontrak',
+                'force_majeure'      => 'Force Majeure',
+                'expiration'         => 'Berakhirnya Masa Kontrak',
+                'other'              => 'Lainnya',
+            ];
 
-                $reasonLabel = $reasonLabels[$validated['termination_reason']] ?? $validated['termination_reason'];
-                $effectiveDateStr = $effectiveDate->locale('id')->isoFormat('D MMMM YYYY');
-                $isToday = $effectiveDate->startOfDay()->lessThanOrEqualTo($today);
+            $reasonLabel = $reasonLabels[$validated['termination_reason']] ?? $validated['termination_reason'];
+            $effectiveDateStr = $effectiveDate->locale('id')->isoFormat('D MMMM YYYY');
+            $isToday = $effectiveDate->startOfDay()->lessThanOrEqualTo($today);
 
             $termination = DB::transaction(function () use ($contract, $validated, $documentPath, $effectiveDate, $today, $reasonLabel, $effectiveDateStr, $isToday) {
                 $updateData = [
@@ -134,6 +152,43 @@ class ContractTerminationController extends Controller
                         ]);
                     }
                 }
+
+                // Email ke eksternal
+                foreach ($contract->signers as $signer) {
+                    if (
+                        $signer->signer_type === 'external' &&
+                        !empty($signer->external_email)
+                    ) {
+                        try {
+                            Mail::to($signer->external_email)->send(
+                                $isToday
+                                    ? new ContractTerminatedMail(
+                                        $contract,
+                                        $signer->signer_name,
+                                        $reasonLabel,
+                                        $effectiveDateStr
+                                    )
+                                    : new ContractTerminatingMail(
+                                        $contract,
+                                        $signer->signer_name,
+                                        $reasonLabel,
+                                        $effectiveDateStr
+                                    )
+                            );
+
+                            Log::info('Email terminasi berhasil dikirim', [
+                                'email' => $signer->external_email,
+                                'contract_id' => $contract->id,
+                            ]);
+                        } catch (\Exception $e) {
+                            Log::error('Gagal mengirim email terminasi', [
+                                'email' => $signer->external_email,
+                                'contract_id' => $contract->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
+                }
                 return $termination;
             });
 
@@ -169,14 +224,18 @@ class ContractTerminationController extends Controller
     public function destroy(int $contractId, int $terminationId): JsonResponse
     {
         try {
+            $contract = Contract::findOrFail($contractId);
+            if (Gate::denies('deleteTermination', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
+
             $termination = ContractTermination::where('contract_id', $contractId)
                 ->findOrFail($terminationId);
 
-            DB::transaction(function () use ($termination, $contractId) {
+            DB::transaction(function () use ($termination, $contract) {
                 $termination->delete();
 
                 // Kembalikan status kontrak ke active jika terminasi dihapus
-                $contract = Contract::findOrFail($contractId);
                 $contract->update(['status' => 'active']);
             });
 
@@ -187,5 +246,12 @@ class ContractTerminationController extends Controller
             Log::error('Delete termination error', ['termination_id' => $terminationId, 'error' => $e->getMessage()]);
             return response()->json(['message' => 'Server error', 'error' => $e->getMessage()], 500);
         }
+    }
+
+    private function forbiddenContractResponse(): JsonResponse
+    {
+        return response()->json([
+            'message' => 'Anda tidak memiliki akses ke kontrak ini.',
+        ], 403);
     }
 }
