@@ -16,6 +16,7 @@ use App\Models\ExternalSignatureToken;
 use App\Mail\ExternalSigningRequestMail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use App\Http\Controllers\Controller;
@@ -64,6 +65,17 @@ class ContractController extends Controller
             if (!$request->boolean('include_external')) {
                 $query->where('contract_type', 'internal');
             };
+
+            $user = $request->user();
+            if (!$user->hasRole('admin')) {
+                $query->where(function ($q) use ($user) {
+                    $q->where('created_by', $user->id)
+                        ->orWhereHas('signers', function ($signerQuery) use ($user) {
+                            $signerQuery->where('signer_type', 'internal')
+                                ->where('user_id', $user->id);
+                        });
+                });
+            }
 
             // filter berdasarkan parameter 'archive'
             if ($request->boolean('archive')) {
@@ -135,6 +147,13 @@ class ContractController extends Controller
                     ? Template::find($validated['template_id'])
                     : null;
                 $validated['paper_size'] = $template?->paper_size ?? 'f4';
+            }
+
+            if (!empty($validated['parent_contract_id'])) {
+                $parentContract = Contract::findOrFail($validated['parent_contract_id']);
+                if (Gate::denies('view', $parentContract)) {
+                    return $this->forbiddenContractResponse();
+                }
             }
 
             $contract = DB::transaction(function () use ($validated) {
@@ -257,6 +276,10 @@ class ContractController extends Controller
                     $query->whereIn('status', ['draft', 'review', 'revision', 'approved', 'signed', 'active']),
             ])->findOrFail($id);
 
+            if (Gate::denies('view', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
+
             return response()->json([
                 'message' => 'Contract retrieved successfully',
                 'data' => new ContractResource($contract),
@@ -286,6 +309,10 @@ class ContractController extends Controller
                 'latestVersion.fieldValues',
                 'signers',
             ])->findOrFail($id);
+
+            if (Gate::denies('view', $sourceContract)) {
+                return $this->forbiddenContractResponse();
+            }
 
             if (!in_array($sourceContract->status, ['active', 'expired'], true)) {
                 return response()->json([
@@ -408,6 +435,10 @@ class ContractController extends Controller
                 'template.category:id,name',
             ])->findOrFail($id);
 
+            if (Gate::denies('view', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
+
             if ($contract->signed_document_path) {
                 $filePath = storage_path('app/public/' . $contract->signed_document_path);
                 if (file_exists($filePath)) {
@@ -471,6 +502,10 @@ class ContractController extends Controller
         try {
             $contract = Contract::findOrFail($id);
             $validated = $request->validated();
+
+            if (Gate::denies('update', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
 
             if (!in_array($contract->status, ['draft', 'revision'])) {
                 return response()->json([
@@ -595,6 +630,10 @@ class ContractController extends Controller
         try {
             $contract = Contract::findOrFail($id);
 
+            if (Gate::denies('delete', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
+
             $contract->delete();
 
             return response()->json([
@@ -622,6 +661,10 @@ class ContractController extends Controller
         try {
             $contract = Contract::findOrFail($id);
             $validated = $request->validated();
+
+            if (Gate::denies('update', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
 
             if (!array_key_exists('status', $validated)) {
                 return response()->json([
@@ -659,6 +702,10 @@ class ContractController extends Controller
         try {
             $contract = Contract::findOrFail($id);
 
+            if (Gate::denies('submit', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
+
             if ($contract->status !== 'draft' && $contract->status !== 'revision') {
                 return response()->json([
                     'message' => 'Only draft or revision contracts can be submitted for review',
@@ -678,12 +725,10 @@ class ContractController extends Controller
             }
             $signers = ContractSigner::where('contract_id', $id)->get();
 
-            $hasInternal = $signers->where('signer_type', 'internal')->isNotEmpty();
-            $hasExternal = $signers->where('signer_type', 'external')->isNotEmpty();
-
-            if (!$hasInternal) {
+            $signerCompositionError = $this->validateSubmitSignerComposition($signers);
+            if ($signerCompositionError) {
                 return response()->json([
-                    'message' => 'Contract must have at least one internal and one external signer before submission',
+                    'message' => $signerCompositionError,
                 ], 422);
             }
 
@@ -846,6 +891,38 @@ class ContractController extends Controller
     }
 
     /**
+     * Validasi final sebelum submit: kontrak harus memiliki tepat 2 signer,
+     * dengan kombinasi 2 internal atau 1 internal + 1 eksternal.
+     */
+    private function validateSubmitSignerComposition($signers): ?string
+    {
+        $total = $signers->count();
+        $internalCount = $signers->where('signer_type', 'internal')->count();
+        $externalCount = $signers->where('signer_type', 'external')->count();
+
+        if ($total !== 2) {
+            return 'Kontrak harus memiliki tepat 2 penandatangan sebelum diajukan.';
+        }
+
+        $validComposition = ($internalCount === 2 && $externalCount === 0)
+            || ($internalCount === 1 && $externalCount === 1);
+
+        if (!$validComposition) {
+            return 'Kombinasi penandatangan hanya boleh 2 internal atau 1 internal dan 1 eksternal.';
+        }
+
+        $invalidInternalSigner = $signers->first(function ($signer) {
+            return $signer->signer_type === 'internal' && !$signer->user_id;
+        });
+
+        if ($invalidInternalSigner) {
+            return 'Penandatangan internal wajib terhubung dengan akun user yang valid.';
+        }
+
+        return null;
+    }
+
+    /**
      * POST /api/contracts/{id}/resend-signing
      * Kirim ulang tautan tanda tangan ke semua signer eksternal yang belum
      * menyelesaikan proses (used_at masih null), misalnya karena token
@@ -856,6 +933,10 @@ class ContractController extends Controller
     {
         try {
             $contract = Contract::with('signers')->findOrFail($id);
+
+            if (Gate::denies('submit', $contract)) {
+                return $this->forbiddenContractResponse();
+            }
 
             if (!in_array($contract->status, ['approved', 'review'])) {
                 return response()->json([
@@ -935,5 +1016,12 @@ class ContractController extends Controller
                 ]);
             }
         }
+    }
+
+    private function forbiddenContractResponse(): JsonResponse
+    {
+        return response()->json([
+            'message' => 'Anda tidak memiliki akses ke kontrak ini.',
+        ], 403);
     }
 }

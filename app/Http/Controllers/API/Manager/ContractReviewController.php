@@ -563,6 +563,9 @@ class ContractReviewController extends Controller
     public function download(int $id)
     {
         try {
+            $user = Auth::user();
+            $this->ensureIsAssignedSigner($id, $user->id);
+
             $contract = Contract::with([
                 'latestVersion',
                 'creator:id,name',
@@ -604,6 +607,8 @@ class ContractReviewController extends Controller
             $filename = preg_replace('/[\/\\\\]/', '-', $filename);
 
             return $pdf->download($filename);
+        } catch (AuthorizationException $e) {
+            return response()->json(['message' => $e->getMessage()], 403);
         } catch (Exception $e) {
             Log::error('Manager: error downloading contract PDF', ['contract_id' => $id, 'error' => $e->getMessage()]);
             return response()->json([

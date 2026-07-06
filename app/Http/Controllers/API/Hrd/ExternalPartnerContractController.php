@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
@@ -18,14 +19,26 @@ class ExternalPartnerContractController extends Controller
 {
     public function index(): JsonResponse
     {
-        $contracts = Contract::where('contract_type', 'external')
+        $user = Auth::user();
+
+        $query = Contract::where('contract_type', 'external')
             ->with([
                 'creator',
                 'termination',
                 'addendums',
-            ])
-            ->latest()
-            ->get();
+            ]);
+
+        if (!$user->hasRole('admin')) {
+            $query->where(function ($q) use ($user) {
+                $q->where('created_by', $user->id)
+                    ->orWhereHas('signers', function ($signerQuery) use ($user) {
+                        $signerQuery->where('signer_type', 'internal')
+                            ->where('user_id', $user->id);
+                    });
+            });
+        }
+
+        $contracts = $query->latest()->get();
 
         return response()->json(['data' => ContractResource::collection($contracts)]);
     }
@@ -110,6 +123,12 @@ class ExternalPartnerContractController extends Controller
     public function destroy(int $id): JsonResponse
     {
         $contract = Contract::where('contract_type', 'external')->findOrFail($id);
+        if (Gate::denies('delete', $contract)) {
+            return response()->json([
+                'message' => 'Anda tidak memiliki akses ke kontrak ini.',
+            ], 403);
+        }
+
         $contract->delete();
         return response()->json(['message' => 'Kontrak berhasil dihapus.']);
     }
