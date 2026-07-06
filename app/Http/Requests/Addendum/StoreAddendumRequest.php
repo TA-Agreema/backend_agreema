@@ -23,10 +23,23 @@ class StoreAddendumRequest extends FormRequest
     {
         return [
             'title'           => 'required|string|max:255',
-            'addendum_number' => 'required|string|max:100',
+            'addendum_number' => 'required|string|max:100|unique:contract_addendums,addendum_number',
             'description'     => 'nullable|string|max:5000',
-            'document'        => 'nullable|file|mimes:pdf|max:10240',
-            'effective_date'  => 'nullable|date',
+            'document'        => 'required|file|mimes:pdf|max:10240',
+            'effective_date'  => 'required|date',
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'title.required' => 'Judul addendum wajib diisi.',
+            'addendum_number.required' => 'Nomor addendum wajib diisi.',
+            'addendum_number.unique' => 'Nomor addendum sudah digunakan.',
+            'document.required' => 'Dokumen wajib diisi.',
+            'document.mimes' => 'Dokumen harus berupa file dengan tipe: pdf.',
+            'document.max' => 'Ukuran dokumen tidak boleh lebih dari 10MB.',
+            'effective_date.required' => 'Tanggal efektif wajib diisi.',
         ];
     }
 }

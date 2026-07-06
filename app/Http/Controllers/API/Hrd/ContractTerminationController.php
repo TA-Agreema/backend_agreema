@@ -56,6 +56,12 @@ class ContractTerminationController extends Controller
         try {
             $contract = Contract::findOrFail($id);
 
+            if ($contract->termination()->exists()) {
+                return response()->json([
+                    'message' => 'Terminasi untuk kontrak ini sudah pernah dibuat.',
+                ], 422);
+            }
+
             if ($contract->status !== 'active') {
                 return response()->json([
                     'message' => 'Terminasi hanya dapat dibuat untuk kontrak yang sedang aktif.',
@@ -72,16 +78,16 @@ class ContractTerminationController extends Controller
             $today = \Carbon\Carbon::today();
 
             $reasonLabels = [
-                    'mutual_agreement'   => 'Kesepakatan Bersama',
-                    'breach_of_contract' => 'Pelanggaran Kontrak',
-                    'force_majeure'      => 'Force Majeure',
-                    'expiration'         => 'Berakhirnya Masa Kontrak',
-                    'other'              => 'Lainnya',
-                ];
+                'mutual_agreement'   => 'Kesepakatan Bersama',
+                'breach_of_contract' => 'Pelanggaran Kontrak',
+                'force_majeure'      => 'Force Majeure',
+                'expiration'         => 'Berakhirnya Masa Kontrak',
+                'other'              => 'Lainnya',
+            ];
 
-                $reasonLabel = $reasonLabels[$validated['termination_reason']] ?? $validated['termination_reason'];
-                $effectiveDateStr = $effectiveDate->locale('id')->isoFormat('D MMMM YYYY');
-                $isToday = $effectiveDate->startOfDay()->lessThanOrEqualTo($today);
+            $reasonLabel = $reasonLabels[$validated['termination_reason']] ?? $validated['termination_reason'];
+            $effectiveDateStr = $effectiveDate->locale('id')->isoFormat('D MMMM YYYY');
+            $isToday = $effectiveDate->startOfDay()->lessThanOrEqualTo($today);
 
             $termination = DB::transaction(function () use ($contract, $validated, $documentPath, $effectiveDate, $today, $reasonLabel, $effectiveDateStr, $isToday) {
                 $updateData = [
@@ -140,40 +146,40 @@ class ContractTerminationController extends Controller
 
                 // Email ke eksternal
                 foreach ($contract->signers as $signer) {
-                if (
-                    $signer->signer_type === 'external' &&
-                    !empty($signer->external_email)
-                ) {
-                    try {
-                        Mail::to($signer->external_email)->send(
-                            $isToday
-                                ? new ContractTerminatedMail(
-                                    $contract,
-                                    $signer->signer_name,
-                                    $reasonLabel,
-                                    $effectiveDateStr
-                                )
-                                : new ContractTerminatingMail(
-                                    $contract,
-                                    $signer->signer_name,
-                                    $reasonLabel,
-                                    $effectiveDateStr
-                                )
-                        );
+                    if (
+                        $signer->signer_type === 'external' &&
+                        !empty($signer->external_email)
+                    ) {
+                        try {
+                            Mail::to($signer->external_email)->send(
+                                $isToday
+                                    ? new ContractTerminatedMail(
+                                        $contract,
+                                        $signer->signer_name,
+                                        $reasonLabel,
+                                        $effectiveDateStr
+                                    )
+                                    : new ContractTerminatingMail(
+                                        $contract,
+                                        $signer->signer_name,
+                                        $reasonLabel,
+                                        $effectiveDateStr
+                                    )
+                            );
 
-                        Log::info('Email terminasi berhasil dikirim', [
-                            'email' => $signer->external_email,
-                            'contract_id' => $contract->id,
-                        ]);
-                    } catch (\Exception $e) {
-                        Log::error('Gagal mengirim email terminasi', [
-                            'email' => $signer->external_email,
-                            'contract_id' => $contract->id,
-                            'error' => $e->getMessage(),
-                        ]);
+                            Log::info('Email terminasi berhasil dikirim', [
+                                'email' => $signer->external_email,
+                                'contract_id' => $contract->id,
+                            ]);
+                        } catch (\Exception $e) {
+                            Log::error('Gagal mengirim email terminasi', [
+                                'email' => $signer->external_email,
+                                'contract_id' => $contract->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
                     }
                 }
-            }
                 return $termination;
             });
 
