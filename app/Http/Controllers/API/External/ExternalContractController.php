@@ -11,7 +11,7 @@ use Illuminate\Http\Request;
 use App\Models\ContractSigner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
-use App\Mail\ContractActivatedMail;
+use App\Mail\ContractSanctionedMail;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
 use App\Models\ContractSignerReview;
@@ -187,7 +187,7 @@ class ExternalContractController extends Controller
                     $this->activateIfReady($contract);
 
                     // Kirim email notifikasi ke semua pihak
-                    $this->sendActivationEmails($contract);
+                    $this->sendSanctionedEmails($contract);
 
                     $contract->loadMissing('signers.user');
 
@@ -205,7 +205,7 @@ class ExternalContractController extends Controller
                             'user_id'     => $contract->created_by,
                             'contract_id' => $contract->id,
                             'type'        => 'contract_activated',
-                            'message'     => "Kedua belah pihak telah mengesahkan {$contract->title}. Kontrak sudah sah danakan aktif sampai pada tanggal {$endDate}.",
+                            'message'     => "Kedua belah pihak telah mengesahkan {$contract->title}. Kontrak sudah sah dan akan aktif sampai pada tanggal {$endDate}.",
                             'is_read'     => false,
                         ]);
 
@@ -225,12 +225,12 @@ class ExternalContractController extends Controller
                             ? $contract->start_date->locale('id')->isoFormat('D MMMM YYYY')
                             : '(belum ditentukan)';
 
-                        // Notifikasi ke HRD — kontrak belum aktif
+                            // Notifikasi ke HRD — kontrak belum aktif
                             Notification::create([
                                 'user_id'     => $contract->created_by,
                                 'contract_id' => $contract->id,
                                 'type'        => 'external_approved',
-                                'message'     => "Pihak kedua telah menyetujui {$contract->title} yang diunggah oleh {$signerItem->user_id}. Kontrak sudah sah dan akan aktif pada tanggal {$startDate}.",
+                                'message'     => "Pihak kedua telah menyetujui {$contract->title}. Kontrak sudah sah dan akan aktif pada tanggal {$startDate}.",
                                 'is_read'     => false,
                             ]);
 
@@ -421,7 +421,7 @@ class ExternalContractController extends Controller
                     $this->activateIfReady($contract);
 
                     // Kirim email notifikasi ke semua pihak
-                    $this->sendActivationEmails($contract);
+                    $this->sendSanctionedEmails($contract);
                 }
 
                 $contract->loadMissing('signers.user');
@@ -477,24 +477,30 @@ class ExternalContractController extends Controller
     }
 
     /**
-     * Kirim email notifikasi ke semua pihak (internal + eksternal) saat kontrak aktif.
+     * Kirim email notifikasi ke semua pihak eksternal saat kontrak aktif.
      * Generate PDF terlebih dahulu dan simpan path-nya ke contract.
      */
-    private function sendActivationEmails(Contract $contract): void
+    private function sendSanctionedEmails(Contract $contract): void
     {
-        // Generate PDF dan simpan path ke contract
-        try {
-            $pdfService = app(ContractPdfService::class);
-            $pdfPath    = $pdfService->generateSignedPdf($contract);
+        // Jika belum ada dokumen final, generate PDF
+        if (
+            empty($contract->signed_document_path) ||
+            !str_contains($contract->signed_document_path, 'signed-documents')
+        ) {
+            try {
+                $pdfService = app(ContractPdfService::class);
 
-            $contract->update(['signed_document_path' => $pdfPath]);
-            $contract->signed_document_path = $pdfPath; // update in-memory juga
-        } catch (\Exception $e) {
-            Log::error('Gagal generate PDF kontrak', [
-                'contract_id' => $contract->id,
-                'error'       => $e->getMessage(),
-            ]);
-            // Tetap kirim email meski PDF gagal, tanpa attachment
+                $pdfPath = $pdfService->generateSignedPdf($contract);
+
+                $contract->update([
+                    'signed_document_path' => $pdfPath,
+                ]);
+
+                $contract->signed_document_path = $pdfPath;
+
+            } catch (\Exception $e) {
+                Log::error(...);
+            }
         }
 
         $contract->loadMissing('signers.user');
@@ -503,11 +509,11 @@ class ExternalContractController extends Controller
             try {
                 if ($signer->signer_type === 'internal' && $signer->user) {
                     Mail::to($signer->user->email)
-                        ->send(new ContractActivatedMail($contract, $signer->user->name));
+                        ->send(new ContractSanctionedMail($contract, $signer->user->name));
                 } elseif ($signer->signer_type === 'external' && $signer->external_email) {
                     $name = $signer->signer_name ?? 'Pihak Eksternal';
                     Mail::to($signer->external_email)
-                        ->send(new ContractActivatedMail($contract, $name));
+                        ->send(new ContractSanctionedMail($contract, $name));
                 }
             } catch (\Exception $e) {
                 Log::error('Gagal mengirim email aktivasi kontrak', [

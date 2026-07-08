@@ -10,7 +10,7 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class ContractActivatedMail extends Mailable
+class ContractSanctionedMail extends Mailable
 {
     use Queueable, SerializesModels;
 
@@ -29,7 +29,7 @@ class ContractActivatedMail extends Mailable
     public function content(): Content
     {
         return new Content(
-            markdown: 'emails.contract.contract-sanctioned',
+            view: 'emails.contract.contract-sanctioned',
             with: [
                 'contract'      => $this->contract,
                 'recipientName' => $this->recipientName,

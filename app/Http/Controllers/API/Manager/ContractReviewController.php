@@ -217,20 +217,33 @@ class ContractReviewController extends Controller
                         $this->dispatchExternalSigningEmails($contract, $iteration + 1);
                     }
                 } else {
-                    // Ubah status kontrak → revision (kembali ke HRD)
-                    $contract->update(['status' => 'revision']);
+                    if ($validated['status'] === 'rejected') {
+                        // Tolak kontrak — ubah status ke rejected
+                        $contract->update(['status' => 'rejected']);
 
-                    // Notifikasi ke HRD agar melakukan perbaikan
-                    Notification::create([
-                        'user_id'     => $contract->created_by,
-                        'contract_id' => $contract->id,
-                        'type'        => 'manager_revision_requested',
-                        'message'     => "Revisi diminta oleh pihak pertama untuk {$contract->title}. Silahkan cek detail kontrak untuk melihat catatan dan dokumen revisi yang dikirimkan.",
-                        'is_read'     => false,
-                    ]);
-                }
+                        // Notifikasi ke HRD bahwa kontrak ditolak
+                        Notification::create([
+                            'user_id'     => $contract->created_by,
+                            'contract_id' => $contract->id,
+                            'type'        => 'manager_rejected',
+                            'message'     => "{$contract->title} telah ditolak oleh pihak pertama. Silakan cek detail kontrak untuk melihat alasan penolakan.",
+                            'is_read'     => false,
+                        ]);
+                    } else { 
+                        $contract->update(['status' => 'revision']);
+
+                        // Notifikasi ke HRD agar melakukan perbaikan
+                        Notification::create([
+                            'user_id'     => $contract->created_by,
+                            'contract_id' => $contract->id,
+                            'type'        => 'manager_revision_requested',
+                            'message'     => "Revisi diminta oleh pihak pertama untuk {$contract->title}. Silahkan cek detail kontrak untuk melihat catatan dan dokumen revisi yang dikirimkan.",
+                            'is_read'     => false,
+                        ]);
+                    } 
+                }  
             });
-
+            
             $responseMessage = '';
             if ($validated['status'] === 'approved') {
                 $fresh = $contract->fresh(['signers']);
@@ -242,7 +255,7 @@ class ContractReviewController extends Controller
                 } else {
                     $responseMessage = 'Persetujuan Anda berhasil disimpan. Menunggu persetujuan pihak internal lainnya.';
                 }
-            } elseif ($validated['status'] === 'rejected') {
+            } else if ($validated['status'] === 'rejected') {
                 $responseMessage = 'Kontrak ditolak dan pihak kedua telah diberitahu.';
             } else {
                 $responseMessage = 'Permintaan revisi berhasil dikirim ke HRD.';
@@ -688,7 +701,7 @@ class ContractReviewController extends Controller
                     'user_id' => $contract->created_by,
                     'contract_id' => $contract->id,
                     'type'        => 'signed_document_uploaded',
-                    'message'     => "Dokumen kontrak {$contract->contract_number} yang sudah ditandatangani telah diupload. Menunggu konfirmasi pihak eksternal.",
+                    'message'     => "Dokumen {$contract->title} yang sudah ditandatangani telah diupload. Menunggu konfirmasi pihak eksternal.",
                     'is_read'     => false,
                 ]);
             });
