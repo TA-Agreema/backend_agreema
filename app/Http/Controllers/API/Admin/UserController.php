@@ -18,7 +18,7 @@ class UserController extends Controller
     public function index()
     {
         try {
-            $users = User::with('roles')->get();
+            $users = User::with('roles')->latest('id')->get();
             return UserResource::collection($users);
         } catch (Exception $e) {
             Log::error('Error retrieving users: ' . $e->getMessage());
@@ -106,7 +106,7 @@ class UserController extends Controller
                     }
                     
                     throw ValidationException::withMessages([
-                         'email' => ['The email has already been taken.'],
+                         'email' => ['Email tidak dapat diubah setelah akun dibuat.'],
                     ]);
                 }
 
@@ -119,6 +119,8 @@ class UserController extends Controller
             });
 
             return new UserResource($user);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (Exception $e) {
             Log::error('Error updating User', [
                 'user_id' => $id,

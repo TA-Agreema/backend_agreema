@@ -21,6 +21,7 @@ class UserRoleController extends Controller
         // include permission names and user counts
         $roles = Role::where('guard_name', 'web')
             ->with('permissions:id,name')
+            ->latest('id')
             ->get();
 
         // Compute users_count from pivot table to avoid morphedByMany errors
@@ -44,9 +45,9 @@ class UserRoleController extends Controller
                 ]);
 
                 return response()->json([
-                    'message' => 'Role name already in use',
+                    'message' => 'Nama role sudah digunakan.',
                     'errors' => [
-                        'name' => ['The role name has already been taken.'],
+                        'name' => ['Nama role sudah digunakan.'],
                     ],
                 ], 422);
             }
@@ -116,7 +117,7 @@ class UserRoleController extends Controller
                         ]);
 
                         throw ValidationException::withMessages([
-                            'name' => ['The role name has already been taken.'],
+                            'name' => ['Nama role sudah digunakan.'],
                         ]);
                     }
                 }
@@ -134,6 +135,8 @@ class UserRoleController extends Controller
             // Set users_count for response
             $role->users_count = DB::table('model_has_roles')->where('role_id', $role->id)->count();
             return new RoleResources($role);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (Exception $e) {
             Log::error('Error updating Role', [
                 'role_id' => $id,
