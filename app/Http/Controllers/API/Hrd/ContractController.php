@@ -766,19 +766,18 @@ class ContractController extends Controller
 
             $contract->update(['status' => 'review']);
 
-            // Notify signers (Manager)
-            foreach ($signers as $signer) {
-                if ($signer->user_id && $signer->signer_type === 'internal') {
-                    Notification::create([
-                        'user_id' => $signer->user_id,
-                        'contract_id' => $contract->id,
-                        'type' => 'review_requested',
-                        'message' => "{$contract->title} memerlukan peninjauan anda.",
-                        'is_read' => false,
-                    ]);
-                }
+            // Notify hanya signer pertama (sequence terkecil) untuk TTD berurutan
+            $firstSigner = $signers->where('signer_type', 'internal')->sortBy('sequence')->first();
+            if ($firstSigner && $firstSigner->user_id) {
+                Notification::create([
+                    'user_id'     => $firstSigner->user_id,
+                    'contract_id' => $contract->id,
+                    'type'        => 'review_requested',
+                    'message'     => "{$contract->title} memerlukan peninjauan dan tanda tangan Anda.",
+                    'is_read'     => false,
+                ]);
             }
-
+            // HRD
             Notification::create([
                 'user_id'     => $contract->created_by,
                 'contract_id' => $contract->id,
