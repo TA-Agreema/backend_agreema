@@ -55,7 +55,7 @@ class ContractController extends Controller
                 ->withCount([
                     'childContracts',
                     'childContracts as open_renewal_count' => fn($query) =>
-                        $query->whereIn('status', ['draft', 'review', 'revision', 'approved', 'signed', 'active']),
+                    $query->whereIn('status', ['draft', 'review', 'revision', 'approved', 'signed', 'active']),
                 ])
                 ->orderByDesc('created_at');
 
@@ -192,8 +192,12 @@ class ContractController extends Controller
 
                         $userId = null;
                         if ($signerData['type'] === 'internal') {
-                            $user = User::where('name', $signerData['name'])->first();
-                            if ($user) $userId = $user->id;
+                            $userId = $this->resolveActiveManagerSignerIdByName($signerData['name'] ?? null);
+                            if (!$userId) {
+                                throw ValidationException::withMessages([
+                                    "signers.{$index}.name" => 'Penandatangan internal harus user manager yang aktif.',
+                                ]);
+                            }
                         }
 
                         ContractSigner::create([
@@ -273,7 +277,7 @@ class ContractController extends Controller
             ])->withCount([
                 'childContracts',
                 'childContracts as open_renewal_count' => fn($query) =>
-                    $query->whereIn('status', ['draft', 'review', 'revision', 'approved', 'signed', 'active']),
+                $query->whereIn('status', ['draft', 'review', 'revision', 'approved', 'signed', 'active']),
             ])->findOrFail($id);
 
             if (Gate::denies('view', $contract)) {
@@ -322,7 +326,8 @@ class ContractController extends Controller
 
             if ($sourceContract->childContracts()
                 ->whereIn('status', ['draft', 'review', 'revision', 'approved', 'signed', 'active'])
-                ->exists()) {
+                ->exists()
+            ) {
                 return response()->json([
                     'message' => 'Kontrak turunan untuk kontrak ini masih diproses.',
                 ], 422);
@@ -528,8 +533,12 @@ class ContractController extends Controller
 
                         $userId = null;
                         if ($signerData['type'] === 'internal') {
-                            $user = User::where('name', $signerData['name'])->first();
-                            if ($user) $userId = $user->id;
+                            $userId = $this->resolveActiveManagerSignerIdByName($signerData['name'] ?? null);
+                            if (!$userId) {
+                                throw ValidationException::withMessages([
+                                    "signers.{$index}.name" => 'Penandatangan internal harus user manager yang aktif.',
+                                ]);
+                            }
                         }
 
 
@@ -871,7 +880,7 @@ class ContractController extends Controller
             $keyFieldIds = FieldDefinition::query()
                 ->whereIn('field_key', $fieldKeys)
                 ->pluck('id')
-                ->map(fn ($id) => (int) $id)
+                ->map(fn($id) => (int) $id)
                 ->all();
 
             $fieldIds = array_merge($fieldIds, $keyFieldIds);
@@ -920,6 +929,21 @@ class ContractController extends Controller
         }
 
         return null;
+    }
+
+    /** Mengambil ID manager aktif berdasarkan nama signer internal. */
+    private function resolveActiveManagerSignerIdByName(?string $name): ?int
+    {
+        $name = trim((string) $name);
+        if ($name === '') {
+            return null;
+        }
+
+        return User::query()
+            ->role('manager')
+            ->where('is_active', 1)
+            ->where('name', $name)
+            ->value('id');
     }
 
     /**

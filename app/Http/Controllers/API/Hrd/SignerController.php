@@ -16,8 +16,9 @@ class SignerController extends Controller
     public function internalSigners(): JsonResponse
     {
         try {
-            // Mengambil user yang aktif dan memiliki job_title
-            $users = User::where('is_active', 1)
+            // Mengambil manager aktif yang memiliki job_title
+            $users = User::role('manager')
+                ->where('is_active', 1)
                 ->whereNotNull('job_title')
                 ->select('id', 'name', 'job_title', 'email')
                 ->get();
