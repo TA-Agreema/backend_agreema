@@ -36,25 +36,70 @@ class ContractReviewController extends Controller
         try {
             $user = Auth::user();
 
-            $contractIds = ContractSigner::where('user_id', $user->id)
+            // Ambil semua contract_id yang di-assign ke user ini sebagai internal signer
+            $mySignerIds = ContractSigner::where('user_id', $user->id)
                 ->where('signer_type', 'internal')
                 ->pluck('contract_id');
+
+            // Filter: hanya tampilkan kontrak yang giliran user ini sudah tiba
+            // Artinya: semua signer dengan sequence lebih kecil sudah approve
+            $eligibleContractIds = $mySignerIds->filter(function ($contractId) use ($user) {
+                $mySigner = ContractSigner::where('contract_id', $contractId)
+                    ->where('user_id', $user->id)
+                    ->where('signer_type', 'internal')
+                    ->first();
+
+                if (!$mySigner) return false;
+
+                $prevSigners = ContractSigner::where('contract_id', $contractId)
+                        ->where('signer_type', 'internal')
+                        ->where('sequence', '<', $mySigner->sequence)
+                        ->get();
+
+                    foreach ($prevSigners as $prev) {
+                        // Cek approve ATAU sudah TTD
+                        $hasApproved = ContractSignerReview::where('contract_signer_id', $prev->id)
+                            ->where('status', 'approved')
+                            ->exists();
+
+                        $hasSigned = ContractSignerSignature::where('contract_signer_id', $prev->id)
+                            ->exists();
+
+                        if (!$hasApproved && !$hasSigned) {
+                            return false; // signer sebelumnya belum approve dan belum TTD
+                        }
+                    }
+
+                return true; // Semua signer sebelumnya sudah approve
+            });
 
             $contracts = Contract::with([
                 'template.category:id,name',
                 'creator:id,name',
                 'latestVersion.fieldValues.fieldDefinition',
                 'signers.user:id,name,email,job_title',
+                'signers.signatures',
                 'addendums',
             ])
-                ->whereIn('id', $contractIds)
+                ->whereIn('id', $eligibleContractIds)
                 ->whereIn('status', ['review', 'revision', 'approved','signed', 'active', 'rejected'])
                 ->orderByDesc('updated_at')
                 ->get();
 
+                $result = $contracts->map(function ($contract) use ($user) {
+                $data = (new ContractResource($contract))->resolve();
+
+                $mySigner = $contract->signers->firstWhere('user_id', $user->id);
+                $data['has_signed'] = $mySigner
+                    ? $mySigner->signatures->isNotEmpty()
+                    : false;
+
+                return $data;
+            });
+
             return response()->json([
                 'message' => 'Contracts retrieved successfully',
-                'data' => ContractResource::collection($contracts)->resolve(),
+                'data'    => $result,
             ]);
         } catch (Exception $e) {
             Log::error('Manager index error', ['error' => $e->getMessage()]);
@@ -209,12 +254,39 @@ class ContractReviewController extends Controller
                 ]);
 
                 if ($validated['status'] === 'approved') {
-                    $hasExternal = $contract->signers->where('signer_type', 'external')->isNotEmpty();
+                    // Cek apakah semua internal signer sudah approve
+                    $allInternalSigners = $contract->signers
+                        ->where('signer_type', 'internal')
+                        ->sortBy('sequence');
 
-                    if ($hasExternal) {
-                        // Kirim ke eksternal
-                        $contract->update(['status' => 'approved']);
-                        $this->dispatchExternalSigningEmails($contract, $iteration + 1);
+                    // Cek apakah signer ini adalah yang terakhir (sequence tertinggi) di antara internal
+                    $lastInternalSigner = $allInternalSigners->last();
+                    $isLastInternal = $lastInternalSigner && $lastInternalSigner->id === $signer->id;
+
+                    if ($isLastInternal) {
+                        // Semua internal sudah approve → lanjut ke eksternal atau signed
+                        $hasExternal = $contract->signers->where('signer_type', 'external')->isNotEmpty();
+                        if ($hasExternal) {
+                            $contract->update(['status' => 'approved']);
+                            $this->dispatchExternalSigningEmails($contract, $iteration + 1);
+                        }
+                        // Kalau tidak ada eksternal, status tetap review untuk TTD
+                    } else {
+                        // Masih ada internal lain yang belum approve → notifikasi ke internal berikutnya
+                        $nextSigner = $allInternalSigners->first(function ($s) use ($signer) {
+                            return $s->sequence > $signer->sequence;
+                        });
+
+                        if ($nextSigner && $nextSigner->user_id) {
+                            Notification::create([
+                                'user_id'     => $nextSigner->user_id,
+                                'contract_id' => $contract->id,
+                                'type'        => 'review_requested',
+                                'message'     => "{$contract->title} menunggu persetujuan Anda.",
+                                'is_read'     => false,
+                            ]);
+                        }
+                        // Status kontrak tetap 'review' — menunggu internal berikutnya
                     }
                 } else {
                     if ($validated['status'] === 'rejected') {
@@ -229,7 +301,7 @@ class ContractReviewController extends Controller
                             'message'     => "{$contract->title} telah ditolak oleh pihak pertama. Silakan cek detail kontrak untuk melihat alasan penolakan.",
                             'is_read'     => false,
                         ]);
-                    } else { 
+                    } else {
                         $contract->update(['status' => 'revision']);
 
                         // Notifikasi ke HRD agar melakukan perbaikan
@@ -240,22 +312,26 @@ class ContractReviewController extends Controller
                             'message'     => "Revisi diminta oleh pihak pertama untuk {$contract->title}. Silahkan cek detail kontrak untuk melihat catatan dan dokumen revisi yang dikirimkan.",
                             'is_read'     => false,
                         ]);
-                    } 
-                }  
+                    }
+                }
             });
-            
+
             $responseMessage = '';
             if ($validated['status'] === 'approved') {
                 $fresh = $contract->fresh(['signers']);
                 $hasExternal = $fresh->signers->where('signer_type', 'external')->isNotEmpty();
-                if ($fresh->status === 'approved' && $hasExternal) {
-                    $responseMessage = 'Kontrak disetujui dan akan dikirim ke pihak kedua.';
-                } elseif ($fresh->status === 'approved' && !$hasExternal) {
-                    $responseMessage = 'Kontrak disetujui. Silakan lanjutkan penandatanganan.';
-                } else {
+
+                $lastInternal = $fresh->signers->where('signer_type', 'internal')->sortBy('sequence')->last();
+                $isLastInternal = $lastInternal && $lastInternal->id === $signer->id;
+
+                if (!$isLastInternal) {
                     $responseMessage = 'Persetujuan Anda berhasil disimpan. Menunggu persetujuan pihak internal lainnya.';
+                } elseif ($fresh->status === 'approved' && $hasExternal) {
+                    $responseMessage = 'Kontrak disetujui dan akan dikirim ke pihak kedua.';
+                } else {
+                    $responseMessage = 'Kontrak disetujui. Silakan lanjutkan penandatanganan.';
                 }
-            } else if ($validated['status'] === 'rejected') {
+            } elseif ($validated['status'] === 'rejected') {
                 $responseMessage = 'Kontrak ditolak dan pihak kedua telah diberitahu.';
             } else {
                 $responseMessage = 'Permintaan revisi berhasil dikirim ke HRD.';
@@ -263,7 +339,7 @@ class ContractReviewController extends Controller
 
             return response()->json([
                 'message' => $responseMessage,
-                'data' => new ContractResource($contract->fresh(['latestVersion'])),
+                'data'    => new ContractResource($contract->fresh(['latestVersion'])),
             ]);
         } catch (ModelNotFoundException $e) {
             return response()->json(['message' => 'Kontrak tidak ditemukan.'], 404);
@@ -413,12 +489,15 @@ class ContractReviewController extends Controller
             foreach ($allInternalSigners as $prevSigner) {
                 if ($prevSigner->sequence >= $signer->sequence) break;
 
-                // Ambil iterasi review tertinggi signer sebelumnya
+                // Cek apakah signer sebelumnya sudah approve atau sudah TTD
                 $prevApproved = ContractSignerReview::where('contract_signer_id', $prevSigner->id)
                     ->where('status', 'approved')
                     ->exists();
 
-                if (!$prevApproved) {
+                $prevSigned = ContractSignerSignature::where('contract_signer_id', $prevSigner->id)
+                    ->exists();
+
+                if (!$prevApproved && !$prevSigned) {
                     return response()->json([
                         'message' => 'Anda belum dapat menandatangani. Penandatangan sebelumnya belum menyetujui kontrak.',
                     ], 422);
@@ -535,6 +614,30 @@ class ContractReviewController extends Controller
                         'contract_id' => $contract->id,
                         'type'        => $isNowActive ? 'contract_activated' : 'manager_approved',
                         'message'     => $messageManager,
+                        'is_read'     => false,
+                    ]);
+                }
+            } else {
+                // Belum semua internal signer TTD → notify signer berikutnya (sequence selanjutnya)
+                $contract->load('signers');
+                $allInternalSorted = $contract->signers
+                    ->where('signer_type', 'internal')
+                    ->sortBy('sequence')
+                    ->values();
+
+                $nextSigner = $allInternalSorted->first(function ($s) use ($signedSignerIds) {
+                    return !$signedSignerIds->contains($s->id);
+                });
+
+                // Ubah status ke approved agar internal berikutnya bisa akses
+                $contract->update(['status' => 'approved']);
+
+                if ($nextSigner && $nextSigner->user_id) {
+                    Notification::create([
+                        'user_id'     => $nextSigner->user_id,
+                        'contract_id' => $contract->id,
+                        'type'        => 'review_requested',
+                        'message'     => "{$contract->title} memerlukan tanda tangan Anda. Penandatangan sebelumnya telah selesai.",
                         'is_read'     => false,
                     ]);
                 }
